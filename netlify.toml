@@ -7,7 +7,8 @@
 [build]
   base = "frontend"
   command = "npm ci && npm run build"
-  publish = "frontend/dist"
+  # Relative to repo root Netlify resolves publish; with `base`, use path relative to `base` (not `frontend/dist`).
+  publish = "dist"
 
 # SPA: all routes → index.html
 [[redirects]]
