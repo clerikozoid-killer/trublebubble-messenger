@@ -4,11 +4,11 @@
 #   VITE_WS_URL=https://your-api.example.com
 # Backend must list https://<your-site>.netlify.app in CORS_ORIGINS / FRONTEND_URL.
 
+# No `base` here: if Netlify UI also sets "Base directory" = frontend, paths become frontend/frontend/dist.
+# Build from repo root; publish path is always relative to repository root.
 [build]
-  base = "frontend"
-  command = "npm ci && npm run build"
-  # Relative to repo root Netlify resolves publish; with `base`, use path relative to `base` (not `frontend/dist`).
-  publish = "dist"
+  command = "cd frontend && npm ci && npm run build"
+  publish = "frontend/dist"
 
 # SPA: all routes → index.html
 [[redirects]]
