@@ -33,4 +33,16 @@ export async function bootstrapAdmin(): Promise<void> {
   });
 
   console.log(`[bootstrapAdmin] Admin user ready: ${email}`);
+
+  /** If you already have an account (e.g. registered before ADMIN_EMAIL was set), promote this username. */
+  const promoteUsername = process.env.ADMIN_PROMOTE_USERNAME?.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (promoteUsername) {
+    const r = await prisma.user.updateMany({
+      where: { username: promoteUsername },
+      data: { isAdmin: true },
+    });
+    if (r.count > 0) {
+      console.log(`[bootstrapAdmin] Promoted isAdmin for username "${promoteUsername}" (${r.count} row(s))`);
+    }
+  }
 }

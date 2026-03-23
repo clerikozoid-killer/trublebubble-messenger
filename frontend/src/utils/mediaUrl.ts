@@ -6,7 +6,12 @@
 export function mediaUrl(path: string | null | undefined): string | undefined {
   if (path == null || path === '') return undefined;
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  const base = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+  // Same host as API/WebSocket (Netlify UI often sets both; fallback avoids broken /uploads on netlify.app)
+  const base = (
+    import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_WS_URL ||
+    ''
+  ).replace(/\/$/, '');
   const p = path.startsWith('/') ? path : `/${path}`;
   if (base) return `${base}${p}`;
   return p;

@@ -28,12 +28,14 @@ class SocketService {
 
     this.socket = io(WS_URL, {
       auth: { token },
-      // Polling fallback helps behind some proxies / Docker nginx setups
-      transports: ['websocket', 'polling'],
+      // Polling first: Render and some CDNs close pure WebSocket before upgrade; polling then upgrades.
+      transports: ['polling', 'websocket'],
       path: '/socket.io',
       reconnection: true,
-      reconnectionAttempts: 8,
-      reconnectionDelay: 1000,
+      reconnectionAttempts: 12,
+      reconnectionDelay: 1500,
+      reconnectionDelayMax: 15000,
+      timeout: 45000,
     });
 
     this.socket.on('connect', () => {

@@ -76,7 +76,7 @@ async function fetchWithOptionalProxy(url: string, init: RequestInit): Promise<R
   } as Parameters<typeof undiciFetch>[1]);
 }
 
-/** Prefer env model, then common IDs (names change on Google’s side). */
+/** Prefer env model, then common IDs (names change on Google’s side). Skip IDs that 404 on v1beta generateContent (e.g. gemini-1.5-flash-8b). */
 function geminiModelCandidates(): string[] {
   const envModel = process.env.GEMINI_MODEL?.trim();
   const list = [
@@ -85,7 +85,6 @@ function geminiModelCandidates(): string[] {
     'gemini-2.0-flash-001',
     'gemini-1.5-flash',
     'gemini-1.5-flash-latest',
-    'gemini-1.5-flash-8b',
   ].filter((m): m is string => Boolean(m));
   return [...new Set(list)];
 }
@@ -158,7 +157,11 @@ async function completeWithGemini(
   }
 
   console.error('[bubbleBot] All Gemini models failed. Last detail:', lastLog);
-  return 'Извините, сейчас не могу ответить (ошибка Gemini). Попробуйте позже.';
+  return (
+    'Извините, сейчас не могу ответить (ошибка Gemini). Проверьте на сервере: логи Render (строки [bubbleBot] Gemini), ' +
+    'ключ GEMINI_API_KEY, при зеркале — GEMINI_BASE_URL и GEMINI_API_KEY_IN_HEADER=true, модель GEMINI_MODEL. ' +
+    'Либо задайте OPENAI_API_KEY. Попробуйте позже.'
+  );
 }
 
 async function completeWithOpenAI(
