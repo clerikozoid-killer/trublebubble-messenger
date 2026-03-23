@@ -1,0 +1,147 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String?   @unique
+  phone         String?   @unique
+  username      String?   @unique
+  displayName   String
+  isAdmin       Boolean   @default(false)
+  avatarUrl     String?
+  bio           String?
+  passwordHash  String?
+  isOnline      Boolean   @default(false)
+  lastSeenAt    DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sentMessages      Message[]
+  chatMembers       ChatMember[]
+  createdChats      Chat[]           @relation("ChatCreator")
+  messageStatuses    MessageStatus[]
+  encryptionKeys     EncryptionKey?
+
+  @@map("users")
+}
+
+model Chat {
+  id          String   @id @default(uuid())
+  type        ChatType
+  title       String?
+  avatarUrl   String?
+  description String?
+  username    String?  @unique
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy   User?         @relation("ChatCreator", fields: [createdById], references: [id])
+  members     ChatMember[]
+  messages    Message[]
+
+  @@map("chats")
+}
+
+enum ChatType {
+  PRIVATE
+  GROUP
+  CHANNEL
+  SUPERGROUP
+
+  @@map("chat_type")
+}
+
+model ChatMember {
+  chatId   String
+  userId   String
+  role     MemberRole @default(MEMBER)
+  joinedAt DateTime   @default(now())
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([chatId, userId])
+  @@map("chat_members")
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+
+  @@map("member_role")
+}
+
+model Message {
+  id           String        @id @default(uuid())
+  chatId       String
+  senderId     String
+  content      String?
+  contentType  ContentType   @default(TEXT)
+  mediaUrl     String?
+  mediaSize    Int?
+  replyToId    String?
+  isEdited     Boolean       @default(false)
+  isDeleted    Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  chat       Chat           @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender     User           @relation(fields: [senderId], references: [id])
+  replyTo    Message?       @relation("MessageReply", fields: [replyToId], references: [id])
+  replies    Message[]      @relation("MessageReply")
+  statuses   MessageStatus[]
+
+  @@index([chatId, createdAt(sort: Desc)])
+  @@map("messages")
+}
+
+enum ContentType {
+  TEXT
+  IMAGE
+  VIDEO
+  FILE
+  AUDIO
+  VOICE
+
+  @@map("content_type")
+}
+
+model MessageStatus {
+  messageId String
+  userId    String
+  status    MessageStatusType @default(SENT)
+  updatedAt DateTime          @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@id([messageId, userId])
+  @@map("message_statuses")
+}
+
+enum MessageStatusType {
+  SENT
+  DELIVERED
+  READ
+
+  @@map("message_status_type")
+}
+
+model EncryptionKey {
+  userId             String   @id
+  publicKey          String
+  privateKeyEncrypted String?
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("encryption_keys")
+}

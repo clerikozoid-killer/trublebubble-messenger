@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TrubleBubble — адрес</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 480px;
+        margin: 24px auto;
+        padding: 0 16px;
+      }
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        font-size: 14px;
+      }
+      button {
+        margin-top: 12px;
+        padding: 8px 16px;
+        cursor: pointer;
+      }
+      #status {
+        margin-top: 12px;
+        font-size: 13px;
+        color: #0a0;
+      }
+      p.hint {
+        font-size: 13px;
+        color: #555;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>TrubleBubble</h1>
+    <p class="hint">
+      Укажите полный URL вашего мессенджера (например <code>https://bb.example.com</code> или
+      локально <code>http://localhost:5173</code>).
+    </p>
+    <form id="form">
+      <label for="url">URL мессенджера</label>
+      <input id="url" type="url" placeholder="https://..." autocomplete="off" />
+      <button type="submit">Сохранить</button>
+    </form>
+    <div id="status" role="status" aria-live="polite"></div>
+    <script src="options.js"></script>
+  </body>
+</html>

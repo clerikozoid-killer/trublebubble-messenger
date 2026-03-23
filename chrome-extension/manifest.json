@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "TrubleBubble",
+  "version": "1.0.0",
+  "description": "Opens your TrubleBubble messenger (configure URL in extension options).",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "TrubleBubble"
+  },
+  "options_page": "options.html",
+  "permissions": ["storage"]
+}

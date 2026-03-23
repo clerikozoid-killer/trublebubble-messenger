@@ -1,0 +1,16 @@
+# Deploy only the Vite SPA. The API + WebSocket must run elsewhere (Render, Railway, VPS, etc.).
+# In Netlify: Site settings → Environment variables (build + optionally for client):
+#   VITE_API_URL=https://your-api.example.com
+#   VITE_WS_URL=https://your-api.example.com
+# Backend must list https://<your-site>.netlify.app in CORS_ORIGINS / FRONTEND_URL.
+
+[build]
+  base = "frontend"
+  command = "npm ci && npm run build"
+  publish = "frontend/dist"
+
+# SPA: all routes → index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

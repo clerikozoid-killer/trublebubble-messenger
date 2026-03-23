@@ -1,0 +1,78 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/messenger?schema=public
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-your-super-secret-refresh-key-change-in-production}
+      - PORT=3001
+      # Browser may use localhost or 127.0.0.1 — both must be allowed for CORS / Socket.io
+      - FRONTEND_URL=http://localhost:5173
+      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:5175,http://127.0.0.1:5175
+      - BUBBLE_BOT_PROMPT_PATH=/app/bubble-bot-prompt.txt
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Same path as multer + express.static (otherwise DB points to /uploads/* but files disappear on container recreate)
+      - UPLOAD_DIR=/app/uploads
+    volumes:
+      # Repo-root prompt file (backend cwd in container is /app; parent has no prompt unless mounted)
+      - ./bubble-bot-prompt.txt:/app/bubble-bot-prompt.txt:ro
+      - messenger_uploads:/app/uploads
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    networks:
+      - messenger-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - messenger-network
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=messenger
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - messenger-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - messenger-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  messenger_uploads:
+
+networks:
+  messenger-network:
+    driver: bridge

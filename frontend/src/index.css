@@ -1,0 +1,166 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg-dark: #17212b;
+  --color-bg-medium: #1f2c33;
+  --color-bg-light: #2a2f36;
+  --color-chat-incoming: #182533;
+  /* ТЗ п. 3.3.2 — акцент как у Telegram (#0088CC) */
+  --color-chat-outgoing: #0088cc;
+  --color-tg-link: #6ab7ff;
+  --color-tg-row-active: #2d3f4d;
+  --color-tg-row-hover: #232e3c;
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #8e9297;
+}
+
+html.light {
+  --color-bg-dark: #ffffff;
+  --color-bg-medium: #f0f2f5;
+  --color-bg-light: #e4e6eb;
+  --color-chat-incoming: #e5ebf0;
+  --color-chat-outgoing: #99c9f0;
+  --color-tg-link: #0088cc;
+  --color-tg-row-active: #dfe4ea;
+  --color-tg-row-hover: #eceff1;
+  --color-text-primary: #000000;
+  --color-text-secondary: #707579;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(142, 146, 151, 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(142, 146, 151, 0.5);
+}
+
+/* Selection */
+::selection {
+  background: rgba(0, 136, 204, 0.4);
+}
+
+/* Focus outline */
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: 2px solid #0088CC;
+  outline-offset: 2px;
+}
+
+/* Input autofill */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px var(--color-bg-medium) inset;
+  -webkit-text-fill-color: var(--color-text-primary);
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Message bubble tail */
+.message-bubble::before {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.message-outgoing::before {
+  right: -8px;
+  top: 0;
+  border-top: 8px solid var(--color-chat-outgoing);
+  border-left: 8px solid transparent;
+}
+
+.message-incoming::before {
+  left: -8px;
+  top: 0;
+  border-top: 8px solid var(--color-chat-incoming);
+  border-right: 8px solid transparent;
+}
+
+/* Typing animation */
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px); }
+}
+
+.typing-dot {
+  animation: typing 1s infinite;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Mobile touch optimizations */
+@media (max-width: 768px) {
+  button, a, .clickable {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Prevent text selection on UI elements */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Loading skeleton */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(42, 47, 54, 0.4) 25%,
+    rgba(42, 47, 54, 0.6) 50%,
+    rgba(42, 47, 54, 0.4) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
