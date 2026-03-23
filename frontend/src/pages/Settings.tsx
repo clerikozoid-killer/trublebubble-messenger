@@ -33,7 +33,17 @@ export default function Settings() {
   const setAppearance = useAppearanceStore((s) => s.setAppearance);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { createChat: _createChat } = useChatStore();
-  const [activeTab, setActiveTab] = useState('profile');
+  /** `menu` = список разделов (в т.ч. Administration для админов); раньше по умолчанию был `profile`, из‑за этого меню не показывалось. */
+  const [activeTab, setActiveTab] = useState<
+    | 'menu'
+    | 'profile'
+    | 'appearance'
+    | 'privacy'
+    | 'notifications'
+    | 'language'
+    | 'create-group'
+    | 'create-channel'
+  >('menu');
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [username, setUsername] = useState(user?.username || '');
@@ -153,17 +163,67 @@ export default function Settings() {
       <div className="flex items-center gap-3 p-4 bg-background-medium border-b border-background-light shrink-0">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={() => {
+            if (activeTab === 'menu') navigate(-1);
+            else setActiveTab('menu');
+          }}
           className="p-2 hover:bg-background-light rounded-full transition-colors"
           aria-label="Back"
         >
           <ArrowLeft className="w-5 h-5 text-text-secondary" />
         </button>
-        <h2 className="font-semibold text-text-primary">Settings</h2>
+        <h2 className="font-semibold text-text-primary">
+          {activeTab === 'profile'
+            ? 'Edit profile'
+            : activeTab === 'appearance'
+              ? 'Appearance'
+              : 'Settings'}
+        </h2>
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
-        {activeTab === 'profile' ? (
+        {activeTab === 'menu' ? (
+          <div className="max-w-lg mx-auto w-full px-4 py-6 space-y-6">
+            {settingsGroups.map((group, index) => (
+              <div key={index}>
+                <h3 className="text-text-secondary text-xs font-medium uppercase mb-2 px-2">
+                  {group.title}
+                </h3>
+                <div className="bg-background-medium rounded-2xl overflow-hidden divide-y divide-background-light border border-background-light/50">
+                  {group.items.map((item, itemIndex) => (
+                    <button
+                      key={itemIndex}
+                      type="button"
+                      onClick={item.action}
+                      className="w-full p-4 flex items-center gap-4 hover:bg-background-light transition-colors text-left"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                        <item.icon className="w-5 h-5 text-primary" />
+                      </div>
+                      <span className="flex-1 text-text-primary">{item.label}</span>
+                      <ChevronRight className="w-5 h-5 text-text-secondary shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full p-4 flex items-center gap-4 bg-background-medium rounded-2xl hover:bg-background-light transition-colors text-left border border-background-light/50"
+              >
+                <div className="w-10 h-10 rounded-full bg-status-danger/20 flex items-center justify-center">
+                  <span className="text-xl">🚪</span>
+                </div>
+                <span className="text-status-danger">Log Out</span>
+              </button>
+            </div>
+
+            <p className="text-center text-text-secondary text-sm pb-4">TrubleBubble</p>
+          </div>
+        ) : activeTab === 'profile' ? (
           <>
             <div className="border-b border-background-light">
               <div className={profileFormClass}>
@@ -289,7 +349,7 @@ export default function Settings() {
           <div className="max-w-lg mx-auto w-full px-4 py-6 space-y-4">
             <button
               type="button"
-              onClick={() => setActiveTab('profile')}
+              onClick={() => setActiveTab('menu')}
               className="flex items-center gap-2 text-text-secondary hover:text-text-primary"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -317,51 +377,29 @@ export default function Settings() {
             </div>
           </div>
         ) : activeTab === 'create-group' ? (
-          <CreateGroup onBack={() => setActiveTab('profile')} />
+          <CreateGroup onBack={() => setActiveTab('menu')} />
         ) : activeTab === 'create-channel' ? (
-          <CreateChannel onBack={() => setActiveTab('profile')} />
-        ) : (
-          <div className="max-w-lg mx-auto w-full px-4 py-6 space-y-6">
-            {settingsGroups.map((group, index) => (
-              <div key={index}>
-                <h3 className="text-text-secondary text-xs font-medium uppercase mb-2 px-2">
-                  {group.title}
-                </h3>
-                <div className="bg-background-medium rounded-2xl overflow-hidden divide-y divide-background-light border border-background-light/50">
-                  {group.items.map((item, itemIndex) => (
-                    <button
-                      key={itemIndex}
-                      type="button"
-                      onClick={item.action}
-                      className="w-full p-4 flex items-center gap-4 hover:bg-background-light transition-colors text-left"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                        <item.icon className="w-5 h-5 text-primary" />
-                      </div>
-                      <span className="flex-1 text-text-primary">{item.label}</span>
-                      <ChevronRight className="w-5 h-5 text-text-secondary shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-
-            <div>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="w-full p-4 flex items-center gap-4 bg-background-medium rounded-2xl hover:bg-background-light transition-colors text-left border border-background-light/50"
-              >
-                <div className="w-10 h-10 rounded-full bg-status-danger/20 flex items-center justify-center">
-                  <span className="text-xl">🚪</span>
-                </div>
-                <span className="text-status-danger">Log Out</span>
-              </button>
-            </div>
-
-            <p className="text-center text-text-secondary text-sm pb-4">TrubleBubble</p>
+          <CreateChannel onBack={() => setActiveTab('menu')} />
+        ) : activeTab === 'privacy' ||
+          activeTab === 'notifications' ||
+          activeTab === 'language' ? (
+          <div className="max-w-lg mx-auto w-full px-4 py-6 space-y-4">
+            <button
+              type="button"
+              onClick={() => setActiveTab('menu')}
+              className="flex items-center gap-2 text-text-secondary hover:text-text-primary"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              Back
+            </button>
+            <h2 className="text-xl font-semibold text-text-primary">
+              {activeTab === 'privacy' && 'Privacy & Security'}
+              {activeTab === 'notifications' && 'Notifications'}
+              {activeTab === 'language' && 'Language'}
+            </h2>
+            <p className="text-sm text-text-secondary">No extra options here yet.</p>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

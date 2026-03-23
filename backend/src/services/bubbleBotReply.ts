@@ -219,7 +219,7 @@ async function completeChat(userMessage: string): Promise<string> {
   }
 
   console.warn('[bubbleBot] Set GEMINI_API_KEY or OPENAI_API_KEY in .env — using fallback reply');
-  return `Привет! Я Bubble_Bot. Добавьте в backend/.env переменную GEMINI_API_KEY (или OPENAI_API_KEY) и при необходимости отредактируйте bubble-bot-prompt.txt в корне проекта. Ваше сообщение: «${userMessage.slice(0, 200)}»`;
+  return `Привет! Я Bubble_Bot. Чтобы я отвечал через ИИ, на сервере бэкенда (локально — в backend/.env, на Render — в Environment) задайте GEMINI_API_KEY или OPENAI_API_KEY. При необходимости укажите GEMINI_BASE_URL (зеркало). Ваше сообщение: «${userMessage.slice(0, 200)}»`;
 }
 
 /**
