@@ -1,0 +1,2 @@
+# Normalize text files to LF in the repo (typical for JS/TS on Windows + Mac/Linux).
+* text=auto eol=lf
