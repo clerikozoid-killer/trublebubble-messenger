@@ -85,75 +85,107 @@ function geminiModelCandidates(): string[] {
     'gemini-2.0-flash-001',
     'gemini-1.5-flash',
     'gemini-1.5-flash-latest',
+    'gemini-1.5-pro',
   ].filter((m): m is string => Boolean(m));
   return [...new Set(list)];
+}
+
+/** Two payload shapes: some mirrors reject `systemInstruction` and return 400 — then merged single prompt works. */
+function geminiRequestBodies(systemPrompt: string, userMessage: string) {
+  const generationConfig = { temperature: 0.7, maxOutputTokens: 1024 };
+  const withSystem = {
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ parts: [{ text: userMessage }] }],
+    generationConfig,
+  };
+  const merged = {
+    contents: [
+      {
+        parts: [
+          {
+            text: `Instructions:\n${systemPrompt}\n\nUser message:\n${userMessage}`,
+          },
+        ],
+      },
+    ],
+    generationConfig,
+  };
+  return [withSystem, merged] as const;
+}
+
+type GeminiJson = {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string }> };
+    finishReason?: string;
+  }>;
+  error?: { message?: string; code?: number };
+};
+
+function textFromGeminiJson(data: GeminiJson, raw: string, model: string): string | null {
+  if (data.error?.message) {
+    console.error('[bubbleBot] Gemini API error field:', data.error);
+    return null;
+  }
+  const cand = data.candidates?.[0];
+  const reason = cand?.finishReason;
+  if (reason === 'SAFETY' || reason === 'BLOCKLIST' || reason === 'PROHIBITED_CONTENT') {
+    return 'Не могу ответить по правилам безопасности модели. Перефразируйте, пожалуйста.';
+  }
+  const parts = cand?.content?.parts;
+  const text = parts?.map((p) => p.text ?? '').join('').trim();
+  if (text) return text;
+  console.warn('[bubbleBot] Gemini empty reply:', model, reason, raw.slice(0, 400));
+  return null;
 }
 
 async function completeWithGemini(
   userMessage: string,
   systemPrompt: string
 ): Promise<string> {
-  const body = {
-    systemInstruction: {
-      parts: [{ text: systemPrompt }],
-    },
-    // Google AI REST: single-turn user text does not require `role` (avoids 400 on some API versions).
-    contents: [{ parts: [{ text: userMessage }] }],
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 1024,
-    },
-  };
-
   let lastLog = '';
+  const bodies = geminiRequestBodies(systemPrompt, userMessage);
+
   for (const model of geminiModelCandidates()) {
     const { url, headers: geminiHeaders } = buildGeminiRequest(model);
-    let res: Response;
-    try {
-      res = await fetchWithOptionalProxy(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...geminiHeaders,
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (e) {
-      lastLog = `${model}: network ${String(e)}`;
-      console.error('[bubbleBot] Gemini fetch failed:', lastLog);
-      continue;
-    }
 
-    const raw = await res.text().catch(() => '');
-    if (!res.ok) {
-      lastLog = `${model}: HTTP ${res.status} ${raw.slice(0, 500)}`;
-      console.error('[bubbleBot] Gemini error:', lastLog);
-      continue;
-    }
+    for (let bi = 0; bi < bodies.length; bi++) {
+      const body = bodies[bi];
+      let res: Response;
+      try {
+        res = await fetchWithOptionalProxy(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...geminiHeaders,
+          },
+          body: JSON.stringify(body),
+        });
+      } catch (e) {
+        lastLog = `${model}: network ${String(e)}`;
+        console.error('[bubbleBot] Gemini fetch failed:', lastLog);
+        break;
+      }
 
-    let data: {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      error?: { message?: string; code?: number };
-    };
-    try {
-      data = JSON.parse(raw) as typeof data;
-    } catch {
-      lastLog = `${model}: invalid JSON`;
-      console.error('[bubbleBot] Gemini invalid JSON:', raw.slice(0, 300));
-      continue;
-    }
+      const raw = await res.text().catch(() => '');
+      if (!res.ok) {
+        lastLog = `${model}: HTTP ${res.status} ${raw.slice(0, 500)}`;
+        console.error('[bubbleBot] Gemini error:', lastLog);
+        continue;
+      }
 
-    if (data.error?.message) {
-      lastLog = `${model}: ${data.error.message}`;
-      console.error('[bubbleBot] Gemini API error field:', data.error);
-      continue;
-    }
+      let data: GeminiJson;
+      try {
+        data = JSON.parse(raw) as GeminiJson;
+      } catch {
+        lastLog = `${model}: invalid JSON`;
+        console.error('[bubbleBot] Gemini invalid JSON:', raw.slice(0, 300));
+        continue;
+      }
 
-    const parts = data.candidates?.[0]?.content?.parts;
-    const text = parts?.map((p) => p.text ?? '').join('').trim();
-    if (text) return text;
-    lastLog = `${model}: empty candidates`;
-    console.warn('[bubbleBot] Gemini empty reply:', lastLog, raw.slice(0, 400));
+      const text = textFromGeminiJson(data, raw, model);
+      if (text) return text;
+      lastLog = `${model}: empty or unusable response (body variant ${bi + 1})`;
+    }
   }
 
   console.error('[bubbleBot] All Gemini models failed. Last detail:', lastLog);

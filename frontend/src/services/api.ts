@@ -1,7 +1,12 @@
 import type { AuthResponse, Chat, User } from '../types';
 import { isDebugUiEnabled, logUi } from '../utils/debugUi';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+/** Same origin as WebSocket (Netlify often sets only VITE_WS_URL — without this, /api hits netlify.app and browse/search hang or 404). */
+const API_BASE_URL = (
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_WS_URL ||
+  ''
+).replace(/\/$/, '');
 
 class ApiService {
   private accessToken: string | null = null;
@@ -68,10 +73,20 @@ class ApiService {
       });
     }
 
-    let response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    const controller = new AbortController();
+    const timeoutMs = 60000;
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers,
+        signal: controller.signal,
+      });
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
 
     // If unauthorized, try to refresh token
     if (response.status === 401 && this.refreshToken) {
@@ -82,10 +97,17 @@ class ApiService {
       
       if (newToken) {
         (headers as Record<string, string>)['Authorization'] = `Bearer ${newToken}`;
-        response = await fetch(url, {
-          ...options,
-          headers,
-        });
+        const c2 = new AbortController();
+        const t2 = window.setTimeout(() => c2.abort(), timeoutMs);
+        try {
+          response = await fetch(url, {
+            ...options,
+            headers,
+            signal: c2.signal,
+          });
+        } finally {
+          window.clearTimeout(t2);
+        }
       }
     }
 

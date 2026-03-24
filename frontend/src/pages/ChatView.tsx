@@ -1053,7 +1053,7 @@ export default function ChatView() {
                 const metaOutgoing = 'text-white/90';
 
                 return (
-                  <div key={message.id} className="relative group">
+                  <div key={message.id} className="group">
                     <div
                       className={`flex gap-2 ${isOutgoing ? 'justify-end' : 'justify-start items-end'} ${
                         showAvatar ? 'mt-4' : ''
@@ -1080,10 +1080,15 @@ export default function ChatView() {
                           )}
                         </div>
                       )}
+                    <div
+                      className={`flex min-w-0 max-w-[calc(100%-2.5rem)] items-end gap-1 ${
+                        isOutgoing ? 'flex-row-reverse' : 'flex-row'
+                      }`}
+                    >
                       <div
-                        className={`max-w-[70%] md:max-w-[60%] min-w-0 ${
+                        className={`max-w-[min(72vw,100%)] md:max-w-[min(60vw,28rem)] min-w-0 ${
                           isOutgoing ? 'message-outgoing' : 'message-incoming'
-                        } relative`}
+                        }`}
                       >
                         <div
                           className={`px-4 py-2 rounded-2xl ${
@@ -1180,50 +1185,50 @@ export default function ChatView() {
                             )}
                           </div>
                         </div>
+                      </div>
 
-                        <div
-                          className={`absolute top-0 ${
-                            isOutgoing ? '-left-12' : '-right-12'
-                          } flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setReplyingTo(message)}
-                            className="p-1.5 hover:bg-background-light rounded-full transition-colors"
+                        <div className="relative flex shrink-0 flex-col gap-0.5 self-end pb-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                          <div
+                            className={`flex flex-col gap-0.5 ${isOutgoing ? 'items-end' : 'items-start'}`}
                           >
-                            <Reply className="w-4 h-4 text-text-secondary" />
-                          </button>
-                          {isOutgoing && (
                             <button
                               type="button"
-                              onClick={() => handleEditMessage(message)}
+                              onClick={() => setReplyingTo(message)}
                               className="p-1.5 hover:bg-background-light rounded-full transition-colors"
                             >
-                              <Edit className="w-4 h-4 text-text-secondary" />
+                              <Reply className="w-4 h-4 text-text-secondary" />
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => setShowMessageMenu(message)}
-                            className="p-1.5 hover:bg-background-light rounded-full transition-colors"
-                            aria-label="Действия с сообщением"
-                          >
-                            <MoreVertical className="w-4 h-4 text-text-secondary" />
-                          </button>
-                        </div>
-
-                        {showMessageMenu?.id === message.id && (
-                          <>
-                            <div
-                              className="fixed inset-0 z-20"
-                              onClick={() => setShowMessageMenu(null)}
-                              aria-hidden
-                            />
-                            <div
-                              className={`absolute top-full mt-1 min-w-[11rem] bg-background-light rounded-lg shadow-xl z-30 py-1 animate-scale-in ${
-                                isOutgoing ? 'right-0' : 'left-0'
-                              }`}
+                            {isOutgoing && (
+                              <button
+                                type="button"
+                                onClick={() => handleEditMessage(message)}
+                                className="p-1.5 hover:bg-background-light rounded-full transition-colors"
+                              >
+                                <Edit className="w-4 h-4 text-text-secondary" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setShowMessageMenu(message)}
+                              className="p-1.5 hover:bg-background-light rounded-full transition-colors"
+                              aria-label="Действия с сообщением"
                             >
+                              <MoreVertical className="w-4 h-4 text-text-secondary" />
+                            </button>
+                          </div>
+
+                          {showMessageMenu?.id === message.id && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-20"
+                                onClick={() => setShowMessageMenu(null)}
+                                aria-hidden
+                              />
+                              <div
+                                className={`absolute top-full mt-1 min-w-[11rem] bg-background-light rounded-lg shadow-xl z-30 py-1 animate-scale-in ${
+                                  isOutgoing ? 'right-0' : 'left-0'
+                                }`}
+                              >
                               {!message.isDeleted && (
                                 <button
                                   type="button"
@@ -1259,6 +1264,7 @@ export default function ChatView() {
                         )}
                       </div>
                     </div>
+                  </div>
                   </div>
                 );
               })}
