@@ -5,6 +5,23 @@ import type { Server } from 'socket.io';
 import { prisma } from '../models/prisma.js';
 import { BUBBLE_BOT_USERNAME } from '../constants/bubbleBot.js';
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Plain-text @username mention (matches how the client inserts mentions). */
+function messageMentionsUser(text: string, username: string): boolean {
+  const re = new RegExp(`@${escapeRegExp(username)}\\b`, 'i');
+  return re.test(text);
+}
+
+/** Remove @bubble_bot from the prompt so the model sees the actual question. */
+function stripUsernameMention(text: string, username: string): string {
+  const re = new RegExp(`@${escapeRegExp(username)}\\b`, 'gi');
+  const cleaned = text.replace(re, ' ').replace(/\s+/g, ' ').trim();
+  return cleaned || text.trim();
+}
+
 function resolvePromptPath(): string {
   const fromEnv = process.env.BUBBLE_BOT_PROMPT_PATH?.trim();
   if (fromEnv) return path.isAbsolute(fromEnv) ? fromEnv : path.resolve(process.cwd(), fromEnv);
@@ -378,7 +395,7 @@ async function completeChat(userMessage: string): Promise<string> {
 }
 
 /**
- * After a human sends a message in a DM with Bubble_Bot, generate and broadcast a bot reply.
+ * After a human sends a message: reply in DMs, or in group/channel/supergroup when @bubble_bot is mentioned.
  */
 export async function maybeReplyAsBubbleBot(
   io: Server,
@@ -394,7 +411,13 @@ export async function maybeReplyAsBubbleBot(
       },
     });
 
-    if (!chat || chat.type !== 'PRIVATE') return;
+    if (!chat) return;
+
+    const isPrivate = chat.type === 'PRIVATE';
+    const isGroupLike =
+      chat.type === 'GROUP' || chat.type === 'SUPERGROUP' || chat.type === 'CHANNEL';
+
+    if (!isPrivate && !isGroupLike) return;
 
     const bot = await prisma.user.findUnique({
       where: { username: BUBBLE_BOT_USERNAME },
@@ -405,7 +428,14 @@ export async function maybeReplyAsBubbleBot(
     if (!botMember) return;
     if (senderId === bot.id) return;
 
-    const text = await completeChat(userMessageText);
+    if (isGroupLike && !messageMentionsUser(userMessageText, BUBBLE_BOT_USERNAME)) {
+      return;
+    }
+
+    const promptText =
+      isPrivate ? userMessageText : stripUsernameMention(userMessageText, BUBBLE_BOT_USERNAME);
+
+    const text = await completeChat(promptText);
 
     const message = await prisma.message.create({
       data: {
