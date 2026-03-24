@@ -87,20 +87,6 @@ export default function ChatSidebar() {
   }, [user?.id, user?.avatarUrl]);
 
   useEffect(() => {
-    if (!user) return;
-
-    const handleNewMessage = () => {
-      void fetchChats();
-    };
-
-    socket.on('new_message', handleNewMessage);
-
-    return () => {
-      socket.off('new_message', handleNewMessage);
-    };
-  }, [user, fetchChats]);
-
-  useEffect(() => {
     const q = searchQuery.trim();
     if (q.length < 2) {
       setSearchResults([]);

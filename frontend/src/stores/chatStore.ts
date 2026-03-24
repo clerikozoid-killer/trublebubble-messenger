@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Chat, ChatMember } from '../types';
+import type { Chat, ChatMember, Message } from '../types';
 import { api } from '../services/api';
 
 interface ChatState {
@@ -21,6 +21,12 @@ interface ChatState {
   createChat: (type: string, memberIds?: string[], title?: string, username?: string) => Promise<Chat>;
   updateChatMembers: (chatId: string, members: ChatMember[]) => void;
   markChatAsRead: (chatId: string) => void;
+  /** Обновить превью чата из сокета без полного fetchChats (быстрее). */
+  applyIncomingMessage: (
+    message: Message,
+    currentUserId: string,
+    activeChatId: string | null | undefined
+  ) => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -133,5 +139,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
         c.id === chatId ? { ...c, unreadCount: 0 } : c
       ),
     });
+  },
+
+  applyIncomingMessage: (message, currentUserId, activeChatId) => {
+    const { chats } = get();
+    const idx = chats.findIndex((c) => c.id === message.chatId);
+    if (idx < 0) {
+      void get().fetchChats();
+      return;
+    }
+    const chat = chats[idx];
+    const fromOther = message.senderId !== currentUserId;
+    const isViewing = activeChatId === message.chatId;
+    let unread = Number(chat.unreadCount ?? 0);
+    if (fromOther) {
+      unread = isViewing ? 0 : unread + 1;
+    }
+    const updated: Chat = {
+      ...chat,
+      updatedAt: message.createdAt,
+      messages: [message],
+      unreadCount: unread,
+    };
+    const newChats = [...chats];
+    newChats[idx] = updated;
+    set({ chats: newChats });
+    if (get().currentChat?.id === message.chatId) {
+      set({ currentChat: { ...get().currentChat!, ...updated } });
+    }
   },
 }));
