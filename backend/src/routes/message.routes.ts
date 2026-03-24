@@ -7,6 +7,7 @@ import { authenticateToken } from '../middleware/auth.middleware.js';
 import { getIoServer } from '../ioServer.js';
 import { maybeReplyAsBubbleBot } from '../services/bubbleBotReply.js';
 import { aggregateRecipientReceipt } from '../utils/messageReceipt.js';
+import { isObjectStorageConfigured, putPublicObject } from '../services/objectStorage.js';
 
 const router = Router();
 
@@ -23,8 +24,13 @@ const chatMediaStorage = multer.diskStorage({
   },
 });
 
-const chatMediaUpload = multer({
+const chatMediaUploadDisk = multer({
   storage: chatMediaStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
+const chatMediaUploadMemory = multer({
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
@@ -254,7 +260,8 @@ router.post(
   '/chat/:chatId/upload',
   authenticateToken,
   (req, res, next) => {
-    chatMediaUpload.single('file')(req, res, (err: unknown) => {
+    const m = isObjectStorageConfigured() ? chatMediaUploadMemory : chatMediaUploadDisk;
+    m.single('file')(req, res, (err: unknown) => {
       if (err) {
         const msg = err instanceof Error ? err.message : 'Upload failed';
         return res.status(400).json({ error: msg });
@@ -284,8 +291,23 @@ router.post(
       else if (mime.startsWith('video/')) contentType = 'VIDEO';
       else if (mime.startsWith('audio/')) contentType = 'AUDIO';
 
+      let mediaUrl: string;
+      if (isObjectStorageConfigured()) {
+        const ext = path.extname(file.originalname).toLowerCase() || '.bin';
+        const safe = /^\.[a-z0-9.]+$/i.test(ext) ? ext : '.bin';
+        const name = `chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safe}`;
+        const buf = file.buffer;
+        if (!buf) {
+          return res.status(400).json({ error: 'No file data' });
+        }
+        const ct = file.mimetype || 'application/octet-stream';
+        mediaUrl = await putPublicObject(`chat/${chatId}/${name}`, buf, ct);
+      } else {
+        mediaUrl = `/uploads/${file.filename}`;
+      }
+
       res.json({
-        mediaUrl: `/uploads/${file.filename}`,
+        mediaUrl,
         mediaSize: file.size,
         contentType,
         originalName: file.originalname,

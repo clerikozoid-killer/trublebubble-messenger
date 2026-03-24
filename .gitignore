@@ -44,6 +44,9 @@ backend/prisma/migrations/
 uploads/
 backend/uploads/
 
+# Local backup zips (uploads); copy between PCs / keep outside git
+backups/
+
 # Cache
 .cache/
 .parcel-cache/

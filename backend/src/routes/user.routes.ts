@@ -5,8 +5,22 @@ import multer from 'multer';
 import { prisma } from '../models/prisma.js';
 import { authenticateToken } from '../middleware/auth.middleware.js';
 import type { AuthRequest } from '../middleware/auth.middleware.js';
+import { isObjectStorageConfigured, putPublicObject } from '../services/objectStorage.js';
 
 const UPLOAD_ROOT = path.resolve(process.env.UPLOAD_DIR || './uploads');
+
+const avatarFileFilter: multer.Options['fileFilter'] = (_req, file, cb) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+  const okExt = ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext);
+  const mime = (file.mimetype || '').toLowerCase();
+  const okMime =
+    /^image\/(jpeg|pjpeg|png|gif|webp|x-png)$/i.test(mime) || mime === 'image/jpg';
+  if (okMime || (okExt && (!mime || mime === 'application/octet-stream'))) {
+    cb(null, true);
+    return;
+  }
+  cb(new Error('Only JPEG, PNG, GIF, WebP images are allowed'));
+};
 
 const uploadStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -16,29 +30,21 @@ const uploadStorage = multer.diskStorage({
   filename: (req, file, cb) => {
     const id = (req as AuthRequest).userId!;
     const ext = path.extname(file.originalname).toLowerCase();
-    const safe = ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)
-      ? ext
-      : '.jpg';
+    const safe = ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext) ? ext : '.jpg';
     cb(null, `avatar-${id}-${Date.now()}${safe}`);
   },
 });
 
-const upload = multer({
+const uploadDisk = multer({
   storage: uploadStorage,
   limits: { fileSize: 2 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const okExt = ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext);
-    const mime = (file.mimetype || '').toLowerCase();
-    const okMime =
-      /^image\/(jpeg|pjpeg|png|gif|webp|x-png)$/i.test(mime) ||
-      mime === 'image/jpg';
-    if (okMime || (okExt && (!mime || mime === 'application/octet-stream'))) {
-      cb(null, true);
-      return;
-    }
-    cb(new Error('Only JPEG, PNG, GIF, WebP images are allowed'));
-  },
+  fileFilter: avatarFileFilter,
+});
+
+const uploadMemory = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: avatarFileFilter,
 });
 
 const router = Router();
@@ -82,7 +88,8 @@ router.post(
   '/me/avatar',
   authenticateToken,
   (req, res, next) => {
-    upload.single('avatar')(req, res, (err: unknown) => {
+    const m = isObjectStorageConfigured() ? uploadMemory : uploadDisk;
+    m.single('avatar')(req, res, (err: unknown) => {
       if (err) {
         const msg = err instanceof Error ? err.message : 'Upload failed';
         return res.status(400).json({ error: msg });
@@ -98,7 +105,21 @@ router.post(
         return res.status(400).json({ error: 'No file uploaded' });
       }
 
-      const avatarUrl = `/uploads/${file.filename}`;
+      let avatarUrl: string;
+      if (isObjectStorageConfigured()) {
+        const ext = path.extname(file.originalname).toLowerCase();
+        const safe = ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext) ? ext : '.jpg';
+        const name = `avatar-${userId}-${Date.now()}${safe}`;
+        const buf = file.buffer;
+        if (!buf) {
+          return res.status(400).json({ error: 'No file data' });
+        }
+        const mime = (file.mimetype || 'image/jpeg').toLowerCase();
+        avatarUrl = await putPublicObject(`avatars/${name}`, buf, mime);
+      } else {
+        avatarUrl = `/uploads/${file.filename}`;
+      }
+
       const user = await prisma.user.update({
         where: { id: userId },
         data: { avatarUrl },
