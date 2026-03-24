@@ -344,7 +344,7 @@ export default function ChatSidebar() {
         </div>
       )}
 
-      <div className="p-3 pb-2 border-b border-background-light shrink-0">
+      <div className="p-3 pb-2 border-b border-background-light shrink-0 relative z-40">
         <div className="flex items-center gap-2 min-h-[3.5rem]">
           <button
             type="button"
@@ -406,8 +406,12 @@ export default function ChatSidebar() {
 
             {showMenu && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} aria-hidden />
-                <div className="absolute right-0 top-full mt-1 w-52 bg-background-light rounded-xl shadow-xl z-20 py-1 animate-scale-in border border-background-light/80">
+                <div
+                  className="fixed inset-0 z-[45]"
+                  onClick={() => setShowMenu(false)}
+                  aria-hidden
+                />
+                <div className="absolute right-0 top-full mt-1 w-52 bg-background-light rounded-xl shadow-xl z-[50] py-1 animate-scale-in border border-background-light/80">
                   <button
                     type="button"
                     onClick={() => {
