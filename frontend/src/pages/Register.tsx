@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../services/api';
+import type { User as AppUser } from '../types';
 import { User, Lock, Mail, ArrowRight } from 'lucide-react';
 import { BubbleLogo } from '../components/BubbleLogo';
 
 export default function Register() {
   const navigate = useNavigate();
-  const { setAuth } = useAuthStore();
+  const { setAuth, setUser } = useAuthStore();
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -40,6 +41,12 @@ export default function Register() {
         username || undefined
       );
       setAuth(response.user, response.accessToken, response.refreshToken);
+      try {
+        const me = await api.get<AppUser>('/users/me');
+        setUser(me);
+      } catch {
+        /* keep user from auth response */
+      }
       navigate('/');
     } catch {
       setError('Email or username already taken, or registration failed');

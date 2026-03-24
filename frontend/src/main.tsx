@@ -8,6 +8,11 @@ import { applyAppearanceToDom, useAppearanceStore } from './stores/appearanceSto
 import { isDebugUiEnabled, logUi } from './utils/debugUi';
 
 async function bootstrap() {
+  try {
+    localStorage.removeItem('auth-storage');
+  } catch {
+    /* ignore */
+  }
   if (isDebugUiEnabled()) {
     logUi('bootstrap', 'app-start', { href: typeof window !== 'undefined' ? window.location.href : '' });
   }

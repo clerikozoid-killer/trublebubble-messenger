@@ -28,6 +28,7 @@ export default function Profile() {
   const [isLoading, setIsLoading] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   const isOwnProfile = userId === currentUser?.id || !userId;
   const isBubbleBot = profile?.username === BUBBLE_BOT_USERNAME;
@@ -37,6 +38,10 @@ export default function Profile() {
     const t = window.setTimeout(() => setNotice(null), 4000);
     return () => window.clearTimeout(t);
   }, [notice]);
+
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [profile?.id, profile?.avatarUrl]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -151,11 +156,12 @@ export default function Profile() {
         <div className="relative">
           <div className="h-32 bg-gradient-to-br from-primary to-primary-dark" />
           <div className="absolute -bottom-16 left-1/2 -translate-x-1/2">
-            {mediaUrl(profile.avatarUrl) ? (
+            {mediaUrl(profile.avatarUrl) && !avatarFailed ? (
               <img
                 src={mediaUrl(profile.avatarUrl)}
-                alt={profile.displayName}
+                alt=""
                 className="w-32 h-32 rounded-full object-cover border-4 border-background-dark"
+                onError={() => setAvatarFailed(true)}
               />
             ) : (
               <div className="w-32 h-32 rounded-full bg-primary flex items-center justify-center border-4 border-background-dark">

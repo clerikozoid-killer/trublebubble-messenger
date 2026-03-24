@@ -444,6 +444,11 @@ export default function ChatView() {
 
   const info = getChatDisplayInfo();
 
+  const [peerHeaderAvatarFailed, setPeerHeaderAvatarFailed] = useState(false);
+  useEffect(() => {
+    setPeerHeaderAvatarFailed(false);
+  }, [chatId, info.avatar]);
+
   const mentionMembers = useMemo((): User[] => {
     if (!currentChat?.members?.length) return [];
     return currentChat.members.map((m) => m.user);
@@ -715,14 +720,19 @@ export default function ChatView() {
           <ArrowLeft className="w-5 h-5 text-text-secondary" />
         </button>
 
-        <div className="relative">
-          {mediaUrl(info.avatar) ? (
+        <div className="relative shrink-0 w-10 h-10">
+          {mediaUrl(info.avatar) && !peerHeaderAvatarFailed ? (
             <button
               type="button"
               onClick={openHeader}
-              className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="rounded-full w-10 h-10 overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <img src={mediaUrl(info.avatar)} alt="" className="w-10 h-10 rounded-full object-cover" />
+              <img
+                src={mediaUrl(info.avatar)}
+                alt=""
+                className="w-full h-full object-cover"
+                onError={() => setPeerHeaderAvatarFailed(true)}
+              />
             </button>
           ) : (
             <button
@@ -1187,14 +1197,13 @@ export default function ChatView() {
                         </div>
                       </div>
 
-                        <div className="relative flex shrink-0 flex-col gap-0.5 self-end pb-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                          <div
-                            className={`flex flex-col gap-0.5 ${isOutgoing ? 'items-end' : 'items-start'}`}
-                          >
+                        <div className="relative flex shrink-0 items-center self-end pb-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                          <div className="flex flex-row items-center gap-0.5">
                             <button
                               type="button"
                               onClick={() => setReplyingTo(message)}
-                              className="p-1.5 hover:bg-background-light rounded-full transition-colors"
+                              className="p-1.5 hover:bg-background-light rounded-full transition-colors shrink-0"
+                              aria-label="Ответить"
                             >
                               <Reply className="w-4 h-4 text-text-secondary" />
                             </button>
@@ -1202,7 +1211,8 @@ export default function ChatView() {
                               <button
                                 type="button"
                                 onClick={() => handleEditMessage(message)}
-                                className="p-1.5 hover:bg-background-light rounded-full transition-colors"
+                                className="p-1.5 hover:bg-background-light rounded-full transition-colors shrink-0"
+                                aria-label="Редактировать"
                               >
                                 <Edit className="w-4 h-4 text-text-secondary" />
                               </button>
@@ -1210,7 +1220,7 @@ export default function ChatView() {
                             <button
                               type="button"
                               onClick={() => setShowMessageMenu(message)}
-                              className="p-1.5 hover:bg-background-light rounded-full transition-colors"
+                              className="p-1.5 hover:bg-background-light rounded-full transition-colors shrink-0"
                               aria-label="Действия с сообщением"
                             >
                               <MoreVertical className="w-4 h-4 text-text-secondary" />

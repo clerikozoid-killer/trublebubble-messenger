@@ -76,16 +76,25 @@ async function fetchWithOptionalProxy(url: string, init: RequestInit): Promise<R
   } as Parameters<typeof undiciFetch>[1]);
 }
 
-/** Prefer env model, then common IDs (names change on Google’s side). Skip IDs that 404 on v1beta generateContent (e.g. gemini-1.5-flash-8b). */
+/**
+ * Prefer GEMINI_MODEL, then stable IDs that exist on generativelanguage.googleapis.com.
+ * Do not use bare `gemini-1.5-pro` / `gemini-1.5-flash` — Google returns 404 NOT_FOUND for unversioned 1.5 names on v1beta.
+ * @see https://ai.google.dev/gemini-api/docs/models/gemini
+ */
 function geminiModelCandidates(): string[] {
   const envModel = process.env.GEMINI_MODEL?.trim();
   const list = [
     envModel,
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-pro',
     'gemini-2.0-flash',
     'gemini-2.0-flash-001',
-    'gemini-1.5-flash',
     'gemini-1.5-flash-latest',
-    'gemini-1.5-pro',
+    'gemini-1.5-flash-002',
+    'gemini-1.5-flash-001',
+    'gemini-1.5-pro-002',
+    'gemini-1.5-pro-latest',
   ].filter((m): m is string => Boolean(m));
   return [...new Set(list)];
 }
@@ -170,6 +179,9 @@ async function completeWithGemini(
       if (!res.ok) {
         lastLog = `${model}: HTTP ${res.status} ${raw.slice(0, 500)}`;
         console.error('[bubbleBot] Gemini error:', lastLog);
+        if (res.status === 429) {
+          throw new Error('GEMINI_QUOTA');
+        }
         continue;
       }
 
@@ -196,15 +208,18 @@ async function completeWithGemini(
   );
 }
 
-async function completeWithOpenAI(
+const DEFAULT_OPENAI_BASE = 'https://api.openai.com/v1';
+
+/** OpenAI-compatible Chat Completions (Minimax, OpenAI, Azure, etc.). */
+async function callOpenAIChat(
   userMessage: string,
   systemPrompt: string,
-  apiKey: string
-): Promise<string> {
-  const baseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  apiKey: string,
+  baseUrl: string,
+  model: string
+): Promise<{ ok: true; text: string } | { ok: false; quota: boolean }> {
+  const base = baseUrl.replace(/\/$/, '');
+  const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -223,38 +238,143 @@ async function completeWithOpenAI(
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    console.error('[bubbleBot] OpenAI error:', res.status, errText);
-    return 'Извините, сейчас не могу ответить (ошибка ИИ). Попробуйте позже.';
+    console.error('[bubbleBot] OpenAI-compatible error:', res.status, errText.slice(0, 500));
+    if (res.status === 429 || res.status === 402) return { ok: false, quota: true };
+    return { ok: false, quota: false };
   }
 
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
   };
   const text = data.choices?.[0]?.message?.content?.trim();
-  return text || '…';
+  if (text) return { ok: true, text };
+  return { ok: false, quota: false };
 }
 
+function normalizeOpenAIBase(url: string): string {
+  return url.replace(/\/$/, '');
+}
+
+/**
+ * Order:
+ * 1) If OPENAI_BASE_URL is not the default api.openai.com — treat as Minimax / custom OpenAI-compatible first (OPENAI_API_KEY).
+ * 2) On HTTP 429/402 — OPENAI_FALLBACK_API_KEY against DEFAULT_OPENAI_BASE (OpenAI proper).
+ * 3) Gemini if GEMINI_API_KEY (after primary chain did not return).
+ * 4) If only official OpenAI (no custom OPENAI_BASE_URL) — single OPENAI_API_KEY @ DEFAULT_OPENAI_BASE.
+ */
 async function completeChat(userMessage: string): Promise<string> {
   const systemPrompt = loadSystemPrompt();
 
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
+  const openaiFallbackKey = process.env.OPENAI_FALLBACK_API_KEY?.trim();
 
+  const configuredBase = process.env.OPENAI_BASE_URL?.trim();
+  const primaryBase = normalizeOpenAIBase(configuredBase || DEFAULT_OPENAI_BASE);
+  const isCustomOpenAIBase =
+    Boolean(openaiKey) &&
+    Boolean(configuredBase) &&
+    primaryBase !== normalizeOpenAIBase(DEFAULT_OPENAI_BASE);
+
+  const primaryModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const fallbackModel = process.env.OPENAI_FALLBACK_MODEL || 'gpt-4o-mini';
+
+  let customPrimaryFailedNonQuota = false;
+
+  // 1–2) Minimax (or any non-default OpenAI-compatible) → OpenAI official on quota
+  if (isCustomOpenAIBase && openaiKey) {
+    const r1 = await callOpenAIChat(
+      userMessage,
+      systemPrompt,
+      openaiKey,
+      primaryBase,
+      primaryModel
+    );
+    if (r1.ok) return r1.text;
+
+    if (r1.quota && openaiFallbackKey) {
+      console.warn('[bubbleBot] Primary OpenAI-compatible quota — trying OpenAI (fallback key)');
+      const r2 = await callOpenAIChat(
+        userMessage,
+        systemPrompt,
+        openaiFallbackKey,
+        DEFAULT_OPENAI_BASE,
+        fallbackModel
+      );
+      if (r2.ok) return r2.text;
+      return (
+        'Извините, и primary API (Minimax и т.д.), и резервный OpenAI сейчас недоступны (квота или ошибка). Попробуйте позже.'
+      );
+    }
+
+    if (r1.quota && !openaiFallbackKey) {
+      return (
+        'Квота на стороне primary API (например Minimax) исчерпана. ' +
+        'Задайте OPENAI_FALLBACK_API_KEY для резервного доступа к OpenAI (api.openai.com) или подождите.'
+      );
+    }
+
+    customPrimaryFailedNonQuota = true;
+    console.warn('[bubbleBot] Primary OpenAI-compatible failed (non-quota) — trying Gemini if configured');
+  }
+
+  // 3) Gemini
   if (geminiKey) {
     try {
       return await completeWithGemini(userMessage, systemPrompt);
     } catch (e) {
+      if (e instanceof Error && e.message === 'GEMINI_QUOTA' && openaiFallbackKey) {
+        console.warn('[bubbleBot] Gemini quota — trying OpenAI fallback');
+        const r = await callOpenAIChat(
+          userMessage,
+          systemPrompt,
+          openaiFallbackKey,
+          DEFAULT_OPENAI_BASE,
+          fallbackModel
+        );
+        if (r.ok) return r.text;
+        return (
+          'Квота Google Gemini исчерпана, резервный OpenAI тоже не ответил. ' +
+          'Проверьте OPENAI_FALLBACK_API_KEY и квоты. Справка: https://ai.google.dev/gemini-api/docs/rate-limits'
+        );
+      }
+      if (e instanceof Error && e.message === 'GEMINI_QUOTA') {
+        return (
+          'Квота Google Gemini исчерпана (бесплатный лимит или 0 запросов в день). ' +
+          'Задайте OPENAI_FALLBACK_API_KEY для резервного OpenAI или подождите. ' +
+          'Справка: https://ai.google.dev/gemini-api/docs/rate-limits'
+        );
+      }
       console.error('[bubbleBot] Gemini call failed:', e);
       return 'Извините, не удалось обратиться к Gemini. Проверьте GEMINI_API_KEY и GEMINI_MODEL в .env.';
     }
   }
 
-  if (openaiKey) {
-    return completeWithOpenAI(userMessage, systemPrompt, openaiKey);
+  if (customPrimaryFailedNonQuota && !geminiKey) {
+    return (
+      'Первичный API (Minimax / OPENAI_BASE_URL) вернул ошибку, Gemini не настроен. ' +
+      'Проверьте OPENAI_BASE_URL, OPENAI_MODEL, OPENAI_API_KEY или задайте GEMINI_API_KEY.'
+    );
   }
 
-  console.warn('[bubbleBot] Set GEMINI_API_KEY or OPENAI_API_KEY in .env — using fallback reply');
-  return `Привет! Я Bubble_Bot. Чтобы я отвечал через ИИ, на сервере бэкенда (локально — в backend/.env, на Render — в Environment) задайте GEMINI_API_KEY или OPENAI_API_KEY. При необходимости укажите GEMINI_BASE_URL (зеркало). Ваше сообщение: «${userMessage.slice(0, 200)}»`;
+  // 4) Only official OpenAI (no custom base in env)
+  if (openaiKey && !isCustomOpenAIBase) {
+    const r = await callOpenAIChat(
+      userMessage,
+      systemPrompt,
+      openaiKey,
+      DEFAULT_OPENAI_BASE,
+      primaryModel
+    );
+    if (r.ok) return r.text;
+    if (r.quota) {
+      return 'Квота OpenAI исчерпана. Проверьте биллинг или подождите.';
+    }
+    return 'Извините, сейчас не могу ответить (ошибка ИИ). Попробуйте позже.';
+  }
+
+  console.warn('[bubbleBot] Set GEMINI_API_KEY and/or OPENAI_API_KEY in .env — using fallback reply');
+  return `Привет! Я Bubble_Bot. Задайте на сервере OPENAI_BASE_URL+OPENAI_API_KEY (например Minimax), опционально OPENAI_FALLBACK_API_KEY для OpenAI при квоте, и/или GEMINI_API_KEY. Ваше сообщение: «${userMessage.slice(0, 200)}»`;
 }
 
 /**

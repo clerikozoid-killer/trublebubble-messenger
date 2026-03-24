@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../services/api';
+import type { User } from '../types';
 import { Phone, Lock, ArrowRight } from 'lucide-react';
 import { BubbleLogo } from '../components/BubbleLogo';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { setAuth } = useAuthStore();
+  const { setAuth, setUser } = useAuthStore();
   const [step, setStep] = useState<'phone' | 'code' | 'password'>('phone');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -46,6 +47,12 @@ export default function Login() {
         newUserUsername
       );
       setAuth(response.user, response.accessToken, response.refreshToken);
+      try {
+        const me = await api.get<User>('/users/me');
+        setUser(me);
+      } catch {
+        /* keep user from auth response */
+      }
       navigate('/');
     } catch {
       setError('Invalid code. Please try again.');
@@ -62,6 +69,12 @@ export default function Login() {
     try {
       const response = await api.login(loginIdentifier, password);
       setAuth(response.user, response.accessToken, response.refreshToken);
+      try {
+        const me = await api.get<User>('/users/me');
+        setUser(me);
+      } catch {
+        /* keep user from auth response */
+      }
       navigate('/');
     } catch {
       setError('Invalid email/username or password.');

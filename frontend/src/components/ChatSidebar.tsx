@@ -63,6 +63,8 @@ export default function ChatSidebar() {
   const [modalQuery, setModalQuery] = useState('');
   const [modalContacts, setModalContacts] = useState<User[]>([]);
   const [modalContactsLoading, setModalContactsLoading] = useState(false);
+  /** Avoid broken /uploads URL (wrong host) showing as empty image over text */
+  const [headerAvatarFailed, setHeaderAvatarFailed] = useState(false);
   const [sidebarMenuExpanded, setSidebarMenuExpanded] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchWrapRef = useRef<HTMLDivElement>(null);
@@ -79,6 +81,10 @@ export default function ChatSidebar() {
       return () => window.clearTimeout(t);
     }
   }, [toast]);
+
+  useEffect(() => {
+    setHeaderAvatarFailed(false);
+  }, [user?.id, user?.avatarUrl]);
 
   useEffect(() => {
     if (!user) return;
@@ -339,32 +345,33 @@ export default function ChatSidebar() {
       )}
 
       <div className="p-3 pb-2 border-b border-background-light shrink-0">
-        <div className="flex items-start gap-2">
+        <div className="flex items-center gap-2 min-h-[3.5rem]">
           <button
             type="button"
             onClick={() => navigate('/settings')}
-            className="relative shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="relative shrink-0 w-14 h-14 rounded-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             aria-label="Открыть настройки профиля"
           >
-            {mediaUrl(user?.avatarUrl) ? (
+            {mediaUrl(user?.avatarUrl) && !headerAvatarFailed ? (
               <img
                 src={mediaUrl(user?.avatarUrl)}
-                alt={user?.displayName ?? ''}
-                className="w-14 h-14 rounded-full object-cover"
+                alt=""
+                className="w-full h-full object-cover"
+                onError={() => setHeaderAvatarFailed(true)}
               />
             ) : (
-              <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center">
+              <div className="w-full h-full rounded-full bg-primary flex items-center justify-center">
                 <span className="text-xl font-semibold text-white">
                   {user?.displayName?.charAt(0).toUpperCase()}
                 </span>
               </div>
             )}
-            <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-status-online rounded-full border-2 border-background-medium" />
+            <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-status-online rounded-full border-2 border-background-medium pointer-events-none" />
           </button>
           <button
             type="button"
             onClick={() => navigate('/settings')}
-            className="flex-1 min-w-0 pt-0.5 text-left rounded-lg hover:bg-tg-rowHover/80 px-1 -mx-1 transition-colors"
+            className="flex-1 min-w-0 text-left rounded-lg hover:bg-tg-rowHover/80 px-1 -mx-1 transition-colors py-0.5"
           >
             <span className="font-semibold text-text-primary truncate block">{user?.displayName}</span>
             <span className="text-sm text-tg-link block truncate mt-0.5">online</span>

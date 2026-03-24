@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { User } from '../types';
 import { api } from '../services/api';
 import { socket } from '../services/socket';
@@ -98,7 +98,9 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: 'auth-storage',
+      /** sessionStorage = отдельный вход в каждой вкладке. localStorage общий на origin — второй логин перезаписывал токены и «выбивал» остальные вкладки. */
+      name: 'auth-session',
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
