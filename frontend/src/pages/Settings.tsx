@@ -23,6 +23,9 @@ import { mediaUrl } from '../utils/mediaUrl';
 import { useAppearanceStore } from '../stores/appearanceStore';
 import { useSoundSettingsStore } from '../stores/soundSettingsStore';
 import { playIncomingMessageSound, unlockNotificationAudio } from '../utils/messageNotificationSound';
+import { useI18n } from '../i18n/useI18n';
+import { LANGUAGES, type LangCode } from '../i18n/languages';
+import { useLanguageStore } from '../stores/languageStore';
 
 const profileFormClass =
   'w-full max-w-md mx-auto px-4 py-6 space-y-5';
@@ -33,6 +36,9 @@ export default function Settings() {
   const { user, setUser, logout } = useAuthStore();
   const appearance = useAppearanceStore((s) => s.appearance);
   const setAppearance = useAppearanceStore((s) => s.setAppearance);
+  const { t } = useI18n();
+  const language = useLanguageStore((s) => s.language);
+  const setLanguage = useLanguageStore((s) => s.setLanguage);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { createChat: _createChat } = useChatStore();
   /** `menu` = список разделов (в т.ч. Administration для админов); раньше по умолчанию был `profile`, из‑за этого меню не показывалось. */
@@ -402,7 +408,7 @@ export default function Settings() {
             <h2 className="text-xl font-semibold text-text-primary">
               {activeTab === 'privacy' && 'Privacy & Security'}
               {activeTab === 'notifications' && 'Notifications'}
-              {activeTab === 'language' && 'Language'}
+          {activeTab === 'language' && t('settings.language.title')}
             </h2>
             {activeTab === 'notifications' ? (
               <div className="space-y-4">
@@ -469,6 +475,33 @@ export default function Settings() {
                 <p className="text-xs text-text-secondary">
                   Совет: скачай MP3/WAV (например из разделов «пули»), положи в <span className="font-mono">frontend/public/sounds</span> как <span className="font-mono">hey.mp3</span>, <span className="font-mono">shot.mp3</span>, <span className="font-mono">hit.mp3</span>.
                 </p>
+              </div>
+            ) : activeTab === 'language' ? (
+              <div className="space-y-4">
+                <h3 className="text-base font-semibold text-text-primary">{t('settings.language.title')}</h3>
+                <p className="text-sm text-text-secondary">{t('settings.language.select')}</p>
+
+                <div className="flex flex-col gap-2">
+                  {LANGUAGES.map((l) => (
+                    <button
+                      key={l.code}
+                      type="button"
+                      onClick={() => setLanguage(l.code as LangCode)}
+                      className={`w-full p-4 rounded-xl text-left border transition-colors ${
+                        language === l.code
+                          ? 'border-tg-link bg-background-medium ring-1 ring-tg-link/30'
+                          : 'border-background-light hover:bg-background-light'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-text-primary font-medium">{l.label}</span>
+                        {language === l.code && (
+                          <span className="text-text-secondary text-sm">✓</span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : (
               <p className="text-sm text-text-secondary">No extra options here yet.</p>

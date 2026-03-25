@@ -28,8 +28,11 @@ class SocketService {
 
     this.socket = io(WS_URL, {
       auth: { token },
-      // Polling first: Render and some CDNs close pure WebSocket before upgrade; polling then upgrades.
-      transports: ['polling', 'websocket'],
+      // Для polling/прокси токен может приходить не из handshake.auth — дублируем в query.
+      query: { token },
+      // Prefer WebSocket only for lower latency (no polling bootstrap).
+      // If your network blocks WebSocket, switch back to polling+websocket.
+      transports: ['websocket'],
       path: '/socket.io',
       reconnection: true,
       reconnectionAttempts: 12,

@@ -32,6 +32,7 @@ import { mediaUrl } from '../utils/mediaUrl';
 import { resolveAppearance, useAppearanceStore } from '../stores/appearanceStore';
 import { getPinnedChatIds, togglePinnedChat, isChatPinned } from '../utils/pinnedChats';
 import { setChatMute } from '../utils/chatMute';
+import { useI18n } from '../i18n/useI18n';
 
 type MsgHit = Awaited<ReturnType<typeof api.searchMessages>>[number];
 
@@ -46,6 +47,7 @@ export default function ChatSidebar() {
   const activeChatId = chatMatch?.params.chatId;
   const isDetailRoute = Boolean(chatMatch || profileMatch || settingsMatch || savedMatch);
   const { user, logout } = useAuthStore();
+  const { t } = useI18n();
   const appearance = useAppearanceStore((s) => s.appearance);
   const setAppearance = useAppearanceStore((s) => s.setAppearance);
   const isDark = resolveAppearance(appearance) === 'dark';
@@ -199,6 +201,21 @@ export default function ChatSidebar() {
     });
   }, [filteredChats, pinVersion]);
 
+  const isDiscussionChat = useCallback((chat: Chat) => {
+    const title = (chat.title || '').toLowerCase();
+    return title.startsWith('обсуждение');
+  }, []);
+
+  const discussionChats = useMemo(
+    () => sortedChats.filter((c) => isDiscussionChat(c)),
+    [sortedChats, isDiscussionChat]
+  );
+
+  const regularChats = useMemo(
+    () => sortedChats.filter((c) => !isDiscussionChat(c)),
+    [sortedChats, isDiscussionChat]
+  );
+
   const showGlobalPanel = searchQuery.trim().length >= 2;
 
   const handleStartChat = async (otherUserId: string) => {
@@ -313,6 +330,88 @@ export default function ChatSidebar() {
   };
 
   const privatePeerId = (chat: Chat) => chat.members.find((m) => m.userId !== user?.id)?.userId;
+
+  const renderChatRow = (chat: Chat) => {
+    const info = getChatDisplayInfo(chat);
+    const lastMessage = chat.messages?.[0];
+    const isActive = chat.id === activeChatId;
+    const pinned = isChatPinned(chat.id);
+    const unread = Number(chat.unreadCount) > 0;
+
+    return (
+      <div key={chat.id} className="relative">
+        <button
+          type="button"
+          onClick={() => navigate(`/chat/${chat.id}`)}
+          onContextMenu={(e) => onRowContextMenu(e, chat)}
+          onTouchStart={(e) => onRowTouchStart(e, chat)}
+          onTouchEnd={onRowTouchEnd}
+          onTouchCancel={onRowTouchEnd}
+          className={clsx(
+            'w-full p-3 flex items-center gap-3 text-left transition-colors',
+            isActive ? 'bg-tg-rowActive' : 'hover:bg-tg-rowHover'
+          )}
+        >
+          <div className="relative flex-shrink-0">
+            {mediaUrl(info.avatar) ? (
+              <img
+                src={mediaUrl(info.avatar)}
+                alt=""
+                className="w-12 h-12 rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-full bg-background-light flex items-center justify-center text-text-secondary">
+                {getChatIcon(chat)}
+              </div>
+            )}
+            {info.isOnline && (
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-status-online rounded-full border-2 border-background-medium" />
+            )}
+            {pinned && (
+              <div className="absolute -top-0.5 -left-0.5 bg-background-medium rounded-full p-0.5 border border-background-light">
+                <Pin className="w-3 h-3 text-tg-link" aria-hidden />
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <h3
+                className={clsx(
+                  'truncate text-text-primary',
+                  unread ? 'font-semibold' : 'font-medium'
+                )}
+              >
+                {info.title}
+              </h3>
+              {lastMessage && (
+                <span className="text-xs text-text-secondary flex-shrink-0">
+                  {formatDistanceToNow(new Date(lastMessage.createdAt), {
+                    addSuffix: false,
+                  })}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {chat.type !== 'PRIVATE' && (
+                <span className="text-xs text-text-secondary">{getChatIcon(chat)}</span>
+              )}
+              <p className="text-sm text-text-secondary truncate">
+                {lastMessage?.content ||
+                  (Number(chat.unreadCount) > 0 ? 'Новые сообщения' : 'Нет сообщений')}
+              </p>
+              {Number(chat.unreadCount) > 0 && (
+                <span className="flex-shrink-0 min-w-[1.25rem] h-5 px-1 bg-primary rounded-full text-xs text-white flex items-center justify-center font-medium">
+                  {Number(chat.unreadCount) > 99 ? '99+' : chat.unreadCount}
+                </span>
+              )}
+            </div>
+          </div>
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -607,84 +706,18 @@ export default function ChatSidebar() {
           </div>
         ) : (
           <div className="divide-y divide-background-light">
-            {sortedChats.map((chat) => {
-              const info = getChatDisplayInfo(chat);
-              const lastMessage = chat.messages?.[0];
-              const isActive = chat.id === activeChatId;
-              const pinned = isChatPinned(chat.id);
-              const unread = Number(chat.unreadCount) > 0;
-
-              return (
-                <div key={chat.id} className="relative">
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/chat/${chat.id}`)}
-                    onContextMenu={(e) => onRowContextMenu(e, chat)}
-                    onTouchStart={(e) => onRowTouchStart(e, chat)}
-                    onTouchEnd={onRowTouchEnd}
-                    onTouchCancel={onRowTouchEnd}
-                    className={clsx(
-                      'w-full p-3 flex items-center gap-3 text-left transition-colors',
-                      isActive ? 'bg-tg-rowActive' : 'hover:bg-tg-rowHover'
-                    )}
-                  >
-                    <div className="relative flex-shrink-0">
-                      {mediaUrl(info.avatar) ? (
-                        <img
-                          src={mediaUrl(info.avatar)}
-                          alt=""
-                          className="w-12 h-12 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-background-light flex items-center justify-center text-text-secondary">
-                          {getChatIcon(chat)}
-                        </div>
-                      )}
-                      {info.isOnline && (
-                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-status-online rounded-full border-2 border-background-medium" />
-                      )}
-                      {pinned && (
-                        <div className="absolute -top-0.5 -left-0.5 bg-background-medium rounded-full p-0.5 border border-background-light">
-                          <Pin className="w-3 h-3 text-tg-link" aria-hidden />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3
-                          className={clsx(
-                            'truncate text-text-primary',
-                            unread ? 'font-semibold' : 'font-medium'
-                          )}
-                        >
-                          {info.title}
-                        </h3>
-                        {lastMessage && (
-                          <span className="text-xs text-text-secondary flex-shrink-0">
-                            {formatDistanceToNow(new Date(lastMessage.createdAt), { addSuffix: false })}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {chat.type !== 'PRIVATE' && (
-                          <span className="text-xs text-text-secondary">{getChatIcon(chat)}</span>
-                        )}
-                        <p className="text-sm text-text-secondary truncate">
-                          {lastMessage?.content ||
-                            (Number(chat.unreadCount) > 0 ? 'Новые сообщения' : 'Нет сообщений')}
-                        </p>
-                        {Number(chat.unreadCount) > 0 && (
-                          <span className="flex-shrink-0 min-w-[1.25rem] h-5 px-1 bg-primary rounded-full text-xs text-white flex items-center justify-center font-medium">
-                            {Number(chat.unreadCount) > 99 ? '99+' : chat.unreadCount}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                </div>
-              );
-            })}
+              {discussionChats.length > 0 && (
+              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                {t('chat.discussions')}
+              </div>
+            )}
+            {discussionChats.map((chat) => renderChatRow(chat))}
+            {regularChats.length > 0 && (
+              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                {t('chat.chats')}
+              </div>
+            )}
+            {regularChats.map((chat) => renderChatRow(chat))}
           </div>
         )}
       </div>
@@ -723,7 +756,7 @@ export default function ChatSidebar() {
               onClick={() => handlePin(contextMenu.chat)}
             >
               <Pin className="w-4 h-4" />
-              {isChatPinned(contextMenu.chat.id) ? 'Открепить' : 'Закрепить'}
+              {isChatPinned(contextMenu.chat.id) ? t('sidebar.context.unpinChat') : t('sidebar.context.pinChat')}
             </button>
             <button
               type="button"

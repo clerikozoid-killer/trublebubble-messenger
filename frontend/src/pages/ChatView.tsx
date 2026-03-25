@@ -48,6 +48,7 @@ import { useChatThemeStore, CHAT_THEME_PRESETS, type ChatThemeId } from '../stor
 import { parseActiveMention } from '../utils/mentionParse';
 import { addSavedMessage } from '../utils/savedMessages';
 import { getPinnedMessage, togglePinnedMessage, clearPinnedMessage } from '../utils/pinnedMessages';
+import { useI18n } from '../i18n/useI18n';
 
 function memberLabel(count: number) {
   return `${count} ${count === 1 ? 'member' : 'members'}`;
@@ -61,6 +62,7 @@ export default function ChatView() {
   const { chatId } = useParams<{ chatId: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { t } = useI18n();
   const { currentChat, fetchChat, markChatAsRead, removeChat, updateChat, createChat } = useChatStore();
   const { messages, fetchMessages, editMessage, deleteMessage, clearChatMessages, sendMessage } = useMessageStore();
 
@@ -361,13 +363,26 @@ export default function ChatView() {
 
     setUploadBusy(true);
     try {
+      const sockConnected = socket.connected;
+      let didFallback = false;
+
       if (hasText) {
-        socket.sendMessage({
-          chatId,
-          content: messageInput.trim(),
-          contentType: 'TEXT',
-          replyToId: rid,
-        });
+        const content = messageInput.trim();
+        if (sockConnected) {
+          socket.sendMessage({
+            chatId,
+            content,
+            contentType: 'TEXT',
+            replyToId: rid,
+          });
+        } else {
+          // Fallback: persist via HTTP so the sender sees the message immediately.
+          await sendMessage(chatId, content, 'TEXT', rid);
+          if (!didFallback) {
+            didFallback = true;
+            setToast('Сокет недоступен — отправлено через HTTP');
+          }
+        }
         setMessageInput('');
       }
 
@@ -378,14 +393,32 @@ export default function ChatView() {
       for (let i = 0; i < batch.length; i++) {
         const p = batch[i];
         const { mediaUrl, mediaSize, contentType } = await api.uploadChatMedia(chatId, p.file);
-        socket.sendMessage({
-          chatId,
-          content: p.file.name,
-          contentType,
-          mediaUrl,
-          mediaSize,
-          replyToId: !hasText && i === 0 ? rid : undefined,
-        });
+
+        const replyToId = !hasText && i === 0 ? rid : undefined;
+        if (sockConnected) {
+          socket.sendMessage({
+            chatId,
+            content: p.file.name,
+            contentType,
+            mediaUrl,
+            mediaSize,
+            replyToId,
+          });
+        } else {
+          // Fallback for media: send via REST and update local store.
+          const created = await api.post<Message>(`/messages/chat/${chatId}`, {
+            content: p.file.name,
+            contentType,
+            mediaUrl,
+            mediaSize,
+            replyToId,
+          });
+          useMessageStore.getState().addMessage(chatId, created);
+          if (!didFallback) {
+            didFallback = true;
+            setToast('Сокет недоступен — вложение отправлено через HTTP');
+          }
+        }
       }
 
       socket.stopTyping(chatId);
@@ -607,31 +640,71 @@ export default function ChatView() {
     const pinnedNow = togglePinnedMessage(user.id, message);
     setPinVersion((n) => n + 1);
     setShowMessageMenu(null);
-    setToast(pinnedNow ? 'Сообщение закреплено' : 'Сообщение откреплено');
+    setToast(pinnedNow ? t('toast.messagePinned') : t('toast.messageUnpinned'));
   };
 
   const handleDiscussMessage = async (message: Message) => {
     if (!user) return;
+    if (!currentChat) return;
     if (message.isDeleted) return;
+    if (!chatId) return;
 
     try {
-      const q = BUBBLE_BOT_USERNAME;
-      const users = await api.searchUsers(q);
-      const bot = users.find((u) => (u.username || '').toLowerCase() === q.toLowerCase());
-      if (!bot?.id) {
+      const botUserInChat = currentChat.members.find(
+        (m) => (m.user.username || '').toLowerCase() === BUBBLE_BOT_USERNAME.toLowerCase()
+      );
+
+      let botId = botUserInChat?.userId;
+      if (!botId) {
+        const users = await api.searchUsers(BUBBLE_BOT_USERNAME);
+        botId = users.find((u) => (u.username || '').toLowerCase() === BUBBLE_BOT_USERNAME.toLowerCase())?.id;
+      }
+
+      if (!botId) {
         setToast('bubble_bot не найден');
         return;
       }
 
-      const botChat = await createChat('PRIVATE', [bot.id]);
+      // Для private-диалогов оставляем логику «личного» обсуждения с ботом
+      if (currentChat.type === 'PRIVATE') {
+        const botChat = await createChat('PRIVATE', [botId]);
+        const base =
+          message.content?.trim() ||
+          (message.mediaUrl ? '[attachment]' : '[message]');
+        const topicText = `Обсуждение темы:\n${base}\n\nИсточник: ${message.sender.displayName}`;
+        await sendMessage(botChat.id, topicText);
+        setShowMessageMenu(null);
+        navigate(`/chat/${botChat.id}`);
+        return;
+      }
+
+      if (currentChat.type === 'CHANNEL') {
+        setToast('Обсуждения для каналов пока недоступны');
+        return;
+      }
+
+      const discussionType: 'GROUP' | 'SUPERGROUP' =
+        currentChat.type === 'SUPERGROUP' ? 'SUPERGROUP' : 'GROUP';
+
+      // Участники обсуждения: все участники из текущего чата + bubble_bot,
+      // но без текущего пользователя (он станет OWNER автоматически в createChat()).
+      const participants = new Set<string>([
+        ...currentChat.members.map((m) => m.userId),
+        botId,
+      ]);
+      participants.delete(user.id);
+
+      const title = `Обсуждение: ${message.sender.displayName}`;
+      const discussionChat = await createChat(discussionType, [...participants], title);
+
       const base =
         message.content?.trim() ||
         (message.mediaUrl ? '[attachment]' : '[message]');
       const topicText = `Обсуждение темы:\n${base}\n\nИсточник: ${message.sender.displayName}`;
 
-      await sendMessage(botChat.id, topicText);
+      await sendMessage(discussionChat.id, topicText);
       setShowMessageMenu(null);
-      navigate(`/chat/${botChat.id}`);
+      navigate(`/chat/${discussionChat.id}`);
     } catch (e) {
       console.error('Discuss message error:', e);
       setToast('Не удалось открыть обсуждение');
@@ -1083,7 +1156,7 @@ export default function ChatView() {
         }
       >
         {pinnedMessage && (
-          <div className="flex items-center gap-3 bg-background-medium/80 border border-background-light/50 rounded-2xl px-3 py-2">
+          <div className="sticky top-0 z-[40] flex items-center gap-3 bg-background-dark/90 backdrop-blur border border-background-light/50 rounded-2xl px-3 py-2">
             <div className="shrink-0 w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
               📌
             </div>
@@ -1096,7 +1169,7 @@ export default function ChatView() {
               }}
             >
               <p className="text-xs text-text-secondary truncate">
-                Закреплено · {pinnedMessage.senderDisplayName}
+                {t('message.pinned')} · {pinnedMessage.senderDisplayName}
               </p>
               <p className="text-sm text-text-primary truncate">
                 {pinnedMessage.content?.trim() ||
@@ -1109,11 +1182,11 @@ export default function ChatView() {
                 if (!user?.id || !chatId) return;
                 clearPinnedMessage(user.id, chatId);
                 setPinVersion((n) => n + 1);
-                setToast('Сообщение откреплено');
+                setToast(t('toast.messageUnpinned'));
               }}
               className="px-3 py-2 rounded-xl bg-background-light hover:bg-background-medium text-sm text-text-primary transition-colors shrink-0"
             >
-              Открепить
+              {t('message.unpin')}
             </button>
           </div>
         )}
@@ -1354,7 +1427,7 @@ export default function ChatView() {
                                   className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
                                 >
                                   <span className="text-base leading-none">💬</span>
-                                  Обсудить
+                                  {t('message.discuss')}
                                 </button>
                               )}
                               {!message.isDeleted && (
@@ -1364,7 +1437,7 @@ export default function ChatView() {
                                   className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
                                 >
                                   <MapPin className="w-4 h-4" />
-                                  {pinnedMessage?.messageId === message.id ? 'Открепить' : 'Закрепить'}
+                                  {pinnedMessage?.messageId === message.id ? t('message.unpin') : t('message.pin')}
                                 </button>
                               )}
                               {isOutgoing && (

@@ -1,8 +1,8 @@
 /**
  * Random incoming-message sound:
- * - "Эй!" (speech) OR real audio from /public/sounds
- * - "выстрел" (noise) OR real audio
- * - "попадание" ("АААГГГРРРХХХ") OR real audio
+ * - "Письмо пришло!" (speech) OR real audio from /public/sounds
+ * - "Ой-ой, кто-то пишет" (speech) OR real audio
+ * - "Эй, гляди кто написал!" (speech) OR real audio
  *
  * Browsers may block audio until user gesture — call unlockNotificationAudio() on first interaction
  * (we do this after user enables sounds via UI and on generic pointer/click events).
@@ -64,49 +64,61 @@ function playTone(
   osc.stop(c.currentTime + durationMs / 1000 + 0.02);
 }
 
-/** «Эй!» — короткая речь или два тона. */
-function playHey(volume: number): void {
-  if (typeof window !== 'undefined' && window.speechSynthesis) {
-    try {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance('Эй!');
-      u.lang = 'ru-RU';
-      u.rate = 1.35;
-      u.volume = Math.max(0, Math.min(1, volume));
-      u.pitch = 1.1;
-      window.speechSynthesis.speak(u);
-      return;
-    } catch {
-      /* fall through */
-    }
+function pickChildVoice(): SpeechSynthesisVoice | undefined {
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices?.length) return undefined;
+
+  const ruVoices = voices.filter((v) => (v.lang || '').toLowerCase().startsWith('ru'));
+  const pool = ruVoices.length ? ruVoices : voices;
+
+  const wantsGirl = Math.random() < 0.5;
+  const girlKeys = ['female', 'girl', 'дев', 'жен'];
+  const boyKeys = ['male', 'boy', 'маль', 'пар'];
+  const keys = wantsGirl ? girlKeys : boyKeys;
+
+  const matched = pool.filter((v) => keys.some((k) => (v.name || '').toLowerCase().includes(k)));
+  const chosen = matched.length ? matched[Math.floor(Math.random() * matched.length)] : pool[Math.floor(Math.random() * pool.length)];
+  return chosen;
+}
+
+function speak(text: string, volume: number): boolean {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return false;
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ru-RU';
+    u.volume = Math.max(0, Math.min(1, volume));
+    // Child-ish: faster + higher pitch.
+    u.rate = 1.15;
+    u.pitch = 1.35;
+
+    const voice = pickChildVoice();
+    if (voice) u.voice = voice;
+
+    window.speechSynthesis.speak(u);
+    return true;
+  } catch {
+    return false;
   }
+}
+
+function playHey(volume: number): void {
+  const spoke = speak('Письмо пришло!', volume);
+  if (spoke) return;
   playTone(880, 80, 'square', volume);
   setTimeout(() => playTone(660, 100, 'square', volume), 70);
 }
 
-/** Выстрел — шумовой импульс. */
 function playShot(volume: number): void {
+  const spoke = speak('Ой-ой, кто-то пишет', volume);
+  if (spoke) return;
   playNoiseBurst(90, 1, volume);
   playTone(180, 40, 'sawtooth', volume);
 }
 
-/** «А-а-а» — низкий свип + шум. */
 function playHit(volume: number): void {
-  if (typeof window !== 'undefined' && window.speechSynthesis) {
-    try {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance('АААГГГРРРХХХ');
-      u.lang = 'ru-RU';
-      u.rate = 0.95;
-      u.volume = Math.max(0, Math.min(1, volume));
-      u.pitch = 0.85;
-      window.speechSynthesis.speak(u);
-      return;
-    } catch {
-      /* fall through */
-    }
-  }
-
+  const spoke = speak('Эй, гляди кто написал!', volume);
+  if (spoke) return;
   const c = getCtx();
   const osc = c.createOscillator();
   const g = c.createGain();
@@ -134,6 +146,14 @@ const SOUND_AUDIO_CANDIDATES: Record<SoundKind, string[]> = {
   shot: ['/sounds/shot.mp3', '/sounds/shot.wav'],
   hit: ['/sounds/hit.mp3', '/sounds/hit.wav'],
 };
+
+// Если у вас лежат звуки с другими именами (например, хеши),
+// добавляем поддержку этих файлов как fallback.
+const SOUND_AUDIO_FALLBACK_ANY: string[] = [
+  '/sounds/3da538630a9ec9c.mp3',
+  '/sounds/681e8fc7bfdf135.mp3',
+  '/sounds/z_uk-rekoshet-puli.mp3',
+];
 
 async function tryPlayAudioFile(src: string, volume: number): Promise<boolean> {
   try {
@@ -167,6 +187,12 @@ export async function playIncomingMessageSound(volume: number = 0.9): Promise<vo
         playedFromAudio = true;
         break;
       }
+    }
+
+    // Если стандартных файлов нет, пробуем любой из ваших лежащих в /public/sounds.
+    if (!playedFromAudio && SOUND_AUDIO_FALLBACK_ANY.length > 0) {
+      const src = SOUND_AUDIO_FALLBACK_ANY[Math.floor(Math.random() * SOUND_AUDIO_FALLBACK_ANY.length)];
+      playedFromAudio = await tryPlayAudioFile(src, v);
     }
 
     if (!playedFromAudio) {

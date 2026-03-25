@@ -12,7 +12,16 @@ interface AuthenticatedSocket extends Socket {
 export const setupSocketHandlers = (io: Server) => {
   // Authentication middleware
   io.use(async (socket: AuthenticatedSocket, next) => {
-    const token = socket.handshake.auth.token;
+    const tokenFromAuth = socket.handshake.auth?.token;
+    const tokenFromQuery = socket.handshake.query?.token;
+    const token =
+      typeof tokenFromAuth === 'string'
+        ? tokenFromAuth
+        : typeof tokenFromQuery === 'string'
+          ? tokenFromQuery
+          : Array.isArray(tokenFromQuery)
+            ? tokenFromQuery[0]
+            : undefined;
 
     if (!token) {
       return next(new Error('Authentication required'));

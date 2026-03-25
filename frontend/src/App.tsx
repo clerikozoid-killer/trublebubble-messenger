@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { installDebugUiConsoleApi, installGlobalInteractionLogging } from './utils/debugUi';
+import { useLanguageStore } from './stores/languageStore';
+import { LANGUAGES } from './i18n/languages';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import MessengerLayout from './layouts/MessengerLayout';
@@ -55,10 +57,19 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  const language = useLanguageStore((s) => s.language);
+
   useEffect(() => {
     installDebugUiConsoleApi();
     return installGlobalInteractionLogging();
   }, []);
+
+  useEffect(() => {
+    const found = LANGUAGES.find((l) => l.code === language);
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = found?.htmlLang || 'ru';
+    }
+  }, [language]);
 
   return (
     <div className="h-full w-full bg-background-dark">
