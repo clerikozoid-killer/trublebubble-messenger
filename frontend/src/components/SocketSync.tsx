@@ -92,13 +92,6 @@ export default function SocketSync() {
       const volume = useSoundSettingsStore.getState().volume;
       if (!enabled) return;
 
-      // Звук только если приложение в фоне (вкладка скрыта/окно не в фокусе).
-      const isInBackground =
-        typeof document !== 'undefined' &&
-        (document.visibilityState !== 'visible' || (typeof document.hasFocus === 'function' && !document.hasFocus()));
-
-      if (!isInBackground) return;
-
       void playIncomingMessageSound(volume);
       useChatStore.getState().applyIncomingMessage(message, user.id, activeChatId);
     };

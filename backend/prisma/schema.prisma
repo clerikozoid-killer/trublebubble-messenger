@@ -27,6 +27,7 @@ model User {
   createdChats      Chat[]           @relation("ChatCreator")
   messageStatuses    MessageStatus[]
   encryptionKeys     EncryptionKey?
+  pollVotes         PollVote[]
 
   @@map("users")
 }
@@ -144,4 +145,51 @@ model EncryptionKey {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("encryption_keys")
+}
+
+model Poll {
+  id           String @id @default(uuid())
+  chatId       String
+  createdById  String
+  question     String
+  isAnonymous  Boolean @default(false)
+  isMultiChoice Boolean @default(false)
+  isQuiz       Boolean @default(false)
+  correctOptionId String? @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  options      PollOption[] @relation("PollOptions")
+  votes        PollVote[]
+  correctOption PollOption? @relation("PollCorrectOption", fields: [correctOptionId], references: [id])
+
+  @@map("polls")
+}
+
+model PollOption {
+  id       String @id @default(uuid())
+  pollId   String
+  text     String
+  order    Int
+
+  poll     Poll @relation("PollOptions", fields: [pollId], references: [id], onDelete: Cascade)
+  correctForPoll Poll? @relation("PollCorrectOption")
+  votes    PollVote[]
+
+  @@unique([pollId, order])
+  @@map("poll_options")
+}
+
+model PollVote {
+  pollId   String
+  userId   String
+  optionId String
+  createdAt DateTime @default(now())
+
+  poll     Poll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user     User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  option   PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@id([pollId, userId, optionId])
+  @@map("poll_votes")
 }

@@ -103,22 +103,21 @@ function speak(text: string, volume: number): boolean {
 }
 
 function playHey(volume: number): void {
-  const spoke = speak('Письмо пришло!', volume);
-  if (spoke) return;
+  // Не полагаемся на speechSynthesis: на части mobile браузеров он "стартует" без фактического звука.
+  // Поэтому всегда проигрываем хотя бы тон/шум.
+  speak('Письмо пришло!', volume);
   playTone(880, 80, 'square', volume);
   setTimeout(() => playTone(660, 100, 'square', volume), 70);
 }
 
 function playShot(volume: number): void {
-  const spoke = speak('Ой-ой, кто-то пишет', volume);
-  if (spoke) return;
+  speak('Ой-ой, кто-то пишет', volume);
   playNoiseBurst(90, 1, volume);
   playTone(180, 40, 'sawtooth', volume);
 }
 
 function playHit(volume: number): void {
-  const spoke = speak('Эй, гляди кто написал!', volume);
-  if (spoke) return;
+  speak('Эй, гляди кто написал!', volume);
   const c = getCtx();
   const osc = c.createOscillator();
   const g = c.createGain();
@@ -178,6 +177,14 @@ export async function playIncomingMessageSound(volume: number = 0.9): Promise<vo
   try {
     const v = Math.max(0, Math.min(1, volume));
     unlockNotificationAudio();
+
+    // AudioContext.resume() может быть асинхронным: подстрахуемся и дождемся, если требуется.
+    try {
+      const c = getCtx();
+      if (c.state === 'suspended') await c.resume();
+    } catch {
+      // ignore
+    }
 
     const kind = kindRandom();
     const candidates = SOUND_AUDIO_CANDIDATES[kind];

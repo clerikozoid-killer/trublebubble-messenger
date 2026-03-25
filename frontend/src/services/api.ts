@@ -322,6 +322,44 @@ class ApiService {
     }>;
   }
 
+  // Polls (group chats)
+  async createPoll(
+    chatId: string,
+    body: {
+      question: string;
+      options: { text: string }[];
+      isAnonymous?: boolean;
+      isMultiChoice?: boolean;
+      isQuiz?: boolean;
+      correctOptionIndex?: number;
+    }
+  ): Promise<{ pollId: string }> {
+    return this.post(`/polls/chat/${encodeURIComponent(chatId)}`, body);
+  }
+
+  async votePoll(pollId: string, optionId: string): Promise<{
+    pollId: string;
+    options: Array<{ id: string; voteCount: number }>;
+  }> {
+    return this.post(`/polls/${encodeURIComponent(pollId)}/vote`, { optionId });
+  }
+
+  async getPollSummary(
+    pollId: string
+  ): Promise<{
+    pollId: string;
+    chatId: string;
+    question: string;
+    isAnonymous: boolean;
+    isMultiChoice: boolean;
+    isQuiz: boolean;
+    correctOptionId: string | null;
+    myOptionIds: string[];
+    options: Array<{ id: string; text: string; order: number; voteCount: number }>;
+  }> {
+    return this.get(`/polls/${encodeURIComponent(pollId)}/summary`);
+  }
+
   async uploadAvatar(file: File): Promise<User> {
     const url = `${API_BASE_URL}/api/users/me/avatar`;
     const headers: HeadersInit = {};

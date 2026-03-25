@@ -38,11 +38,14 @@ import {
   Image as ImageIcon,
   FolderOpen,
   Bookmark,
+  BarChart3,
 } from 'lucide-react';
 import { isToday, isYesterday, format } from 'date-fns';
 import type { Message, User } from '../types';
 import ChatInfoModal from '../components/ChatInfoModal';
 import EmojiPicker from '../components/EmojiPicker';
+import PollCard from '../components/PollCard';
+import PollCreateModal from '../components/PollCreateModal';
 import { mediaUrl } from '../utils/mediaUrl';
 import { getOutgoingReceipt } from '../utils/messageReceipt';
 import { setChatMute, isChatMuted, muteLabel } from '../utils/chatMute';
@@ -65,6 +68,22 @@ const REACTION_EMOJIS = ['😀', '❤️', '😂', '🔥', '😮', '🤔', '🙏
 type PendingAttachment = { id: string; file: File; previewUrl: string };
 
 type ChatSearchFilter = 'all' | 'IMAGE' | 'VIDEO' | 'FILE' | 'VOICE';
+
+type PollStub = { kind: 'poll'; pollId: string };
+
+function parsePollStub(content?: string): PollStub | null {
+  if (!content) return null;
+  if (!content.trim().startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(content) as { kind?: unknown; pollId?: unknown };
+    if (parsed?.kind === 'poll' && typeof parsed?.pollId === 'string') {
+      return { kind: 'poll', pollId: parsed.pollId };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export default function ChatView() {
   const { chatId } = useParams<{ chatId: string }>();
@@ -412,6 +431,8 @@ export default function ChatView() {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   pendingAttachmentsRef.current = pendingAttachments;
+
+  const [showPollModal, setShowPollModal] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1040,12 +1061,13 @@ export default function ChatView() {
     }
     const start = el.selectionStart ?? messageInput.length;
     const end = el.selectionEnd ?? messageInput.length;
-    const next = messageInput.slice(0, start) + emoji + messageInput.slice(end);
-    setMessageInput(next);
-    if (next.length > 0) handleTypingStart();
+    // Важно: selectionStart/selectionEnd и индексы textarea работают в UTF-16 кодовых единицах.
+    // Поэтому нельзя считать длину эмодзи как `[...emoji].length` (ломается на variation selector/флагах).
+    setMessageInput((prev) => prev.slice(0, start) + emoji + prev.slice(end));
+    handleTypingStart();
     queueMicrotask(() => {
       el.focus();
-      const pos = start + [...emoji].length;
+      const pos = start + emoji.length;
       el.setSelectionRange(pos, pos);
       setInputSel(pos);
     });
@@ -1144,7 +1166,9 @@ export default function ChatView() {
       ]);
       participants.delete(user.id);
 
-      const title = `Обсуждение: ${message.sender.displayName}`;
+      // Чтобы не показывать "Обсуждение темы" как отдельное "водяное" сообщение/заголовок,
+      // делаем заголовок нейтральным (Telegram-подобно) — только имя автора.
+      const title = message.sender.displayName;
       const discussionChat = await createChat(discussionType, [...participants], title);
       setDiscussionLink(user.id, chatId, message.id, discussionChat.id);
       setShowMessageMenu(null);
@@ -1160,7 +1184,8 @@ export default function ChatView() {
     e.stopPropagation();
     const y = typeof e.clientY === 'number' ? e.clientY : window.innerHeight / 2;
     // If the menu would likely overlap the composer (bottom area), flip it above the message.
-    const above = y > window.innerHeight - 240;
+    const isNarrow = typeof window !== 'undefined' && window.innerWidth < 640;
+    const above = isNarrow ? true : y > window.innerHeight - 240;
     setMessageMenuPlacement(above ? 'above' : 'below');
     setShowMessageMenu(m);
   };
@@ -1302,7 +1327,7 @@ export default function ChatView() {
         aria-hidden
       />
 
-      {toast && (
+          {toast && (
         <div
           className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 bg-background-light rounded-xl shadow-xl text-sm text-text-primary border border-background-medium max-w-[90vw] text-center"
           role="status"
@@ -1440,7 +1465,7 @@ export default function ChatView() {
             </button>
           )}
           {info.isOnline && (
-            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-status-online rounded-full border-2 border-background-medium pointer-events-none" />
+            <div className="absolute bottom-0 right-0 w-3 h-3 bg-status-online rounded-full border-2 border-background-medium pointer-events-none" />
           )}
         </div>
 
@@ -1475,7 +1500,7 @@ export default function ChatView() {
                 type="button"
                 onClick={() => void startCallerCall('audio')}
                 disabled={Boolean(callUi) || !socket.connected && !accessToken}
-                className="p-2 hover:bg-background-light rounded-full transition-colors disabled:opacity-50 hidden sm:block"
+                className="p-2 hover:bg-background-light rounded-full transition-colors disabled:opacity-50"
                 aria-label="Voice call"
                 title="Voice call"
               >
@@ -1485,7 +1510,7 @@ export default function ChatView() {
                 type="button"
                 onClick={() => void startCallerCall('video')}
                 disabled={Boolean(callUi) || !socket.connected && !accessToken}
-                className="p-2 hover:bg-background-light rounded-full transition-colors disabled:opacity-50 hidden sm:block"
+                className="p-2 hover:bg-background-light rounded-full transition-colors disabled:opacity-50"
                 aria-label="Video call"
                 title="Video call"
               >
@@ -1610,6 +1635,20 @@ export default function ChatView() {
                         >
                           <Users className="w-4 h-4 shrink-0" />
                           Add members
+                        </button>
+                      )}
+
+                      {(currentChat?.type === 'GROUP' || currentChat?.type === 'SUPERGROUP') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowMenu(false);
+                            setShowPollModal(true);
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-text-primary hover:bg-background-medium flex items-center gap-3 transition-colors text-sm"
+                        >
+                          <BarChart3 className="w-4 h-4 shrink-0" />
+                          Опрос
                         </button>
                       )}
                       <button
@@ -1865,14 +1904,14 @@ export default function ChatView() {
                               }`}
                             >
                               <p
-                                className={`text-xs ${isOutgoing ? 'text-white/70' : 'text-text-secondary'}`}
+                                className={`text-xs text-text-primary/80`}
+                                style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
                               >
                                 {message.replyTo.sender.displayName}
                               </p>
                               <p
-                                className={`text-sm truncate ${
-                                  isOutgoing ? 'text-white/80' : 'text-text-secondary'
-                                }`}
+                                className={`text-sm truncate text-text-primary/90`}
+                                style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
                               >
                                 {message.replyTo.content}
                               </p>
@@ -1914,15 +1953,26 @@ export default function ChatView() {
                                 </div>
                               )}
 
-                              {message.content && (
-                                <p
-                                  className={`text-text-primary whitespace-pre-wrap break-words ${
-                                    message.mediaUrl ? 'mt-2 text-sm opacity-90' : ''
-                                  }`}
-                                >
-                                  {message.content}
-                                </p>
-                              )}
+                              {(() => {
+                                const poll = parsePollStub(message.content);
+                                if (poll) {
+                                  return (
+                                    <PollCard chatId={chatId ?? ''} pollId={poll.pollId} />
+                                  );
+                                }
+
+                                if (!message.content) return null;
+                                return (
+                                  <p
+                                    className={`text-text-primary whitespace-pre-wrap break-words ${
+                                      message.mediaUrl ? 'mt-2 text-sm opacity-90' : ''
+                                    }`}
+                                    style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+                                  >
+                                    {message.content}
+                                  </p>
+                                );
+                              })()}
                               {reactionEmoji && (
                                 <div className={`mt-2 ${isOutgoing ? 'flex justify-end' : 'flex justify-start'}`}>
                                   <span className="text-lg leading-none">{reactionEmoji}</span>
@@ -1963,13 +2013,13 @@ export default function ChatView() {
                         </div>
                       </div>
 
-                        <div
-                          className={`relative flex shrink-0 items-center self-end pb-1 transition-opacity ${
-                            showMessageMenu?.id === message.id
-                              ? 'opacity-100'
-                              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-                          }`}
-                        >
+                          <div
+                            className={`relative flex shrink-0 items-center self-end pb-1 transition-opacity ${
+                              showMessageMenu?.id === message.id
+                                ? 'opacity-100'
+                                : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'
+                            }`}
+                          >
                           <div className="flex flex-row items-center gap-0.5">
                             <button
                               type="button"
@@ -2007,7 +2057,7 @@ export default function ChatView() {
                                 aria-hidden
                               />
                               <div
-                                className={`absolute min-w-[11rem] bg-background-light rounded-lg shadow-xl z-30 py-1 animate-scale-in ${
+                                className={`absolute min-w-[11rem] bg-background-light rounded-lg shadow-xl z-[220] py-1 animate-scale-in ${
                                   isOutgoing ? 'right-0' : 'left-0'
                                 } ${messageMenuPlacement === 'below' ? 'top-full mt-1' : 'bottom-full mb-1 top-auto'}`}
                               >
@@ -2021,18 +2071,19 @@ export default function ChatView() {
                                   В избранное
                                 </button>
                               )}
-                              {!message.isDeleted && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void handleDiscussMessage(message);
-                                  }}
-                                  className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
-                                >
-                                  <span className="text-base leading-none">💬</span>
-                                  {t('message.discuss')}
-                                </button>
-                              )}
+                              {!message.isDeleted &&
+                                (currentChat?.type === 'GROUP' || currentChat?.type === 'SUPERGROUP') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void handleDiscussMessage(message);
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
+                                  >
+                                    <span className="text-base leading-none">💬</span>
+                                    {t('message.discuss')}
+                                  </button>
+                                )}
                               {!message.isDeleted && user?.id && (
                                 <div className="px-3 py-2">
                                   <div className="text-xs text-text-secondary mb-1">React</div>
@@ -2064,7 +2115,7 @@ export default function ChatView() {
                                   {pinnedMessage?.messageId === message.id ? t('message.unpin') : t('message.pin')}
                                 </button>
                               )}
-                              {!message.isDeleted && message.content && (
+                              {!message.isDeleted && message.content && !parsePollStub(message.content) && (
                                 <button
                                   type="button"
                                   onClick={() => void handleCopyMessage(message)}
@@ -2124,7 +2175,9 @@ export default function ChatView() {
       {replyingTo && (
         <div className="px-4 py-2 bg-background-medium border-t border-background-light flex items-center gap-3 shrink-0">
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-text-secondary">Replying to {replyingTo.sender.displayName}</p>
+            <p className="text-xs text-text-primary">
+              Replying to {replyingTo.sender.displayName}
+            </p>
             <p className="text-sm text-text-primary truncate">{replyingTo.content}</p>
           </div>
           <button
@@ -2296,6 +2349,20 @@ export default function ChatView() {
                   <MapPin className="w-4 h-4 shrink-0 text-text-secondary" />
                   Геолокация
                 </button>
+
+                {(currentChat?.type === 'GROUP' || currentChat?.type === 'SUPERGROUP') && (
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-background-light flex items-center gap-2"
+                    onClick={() => {
+                      setShowAttachMenu(false);
+                      setShowPollModal(true);
+                    }}
+                  >
+                    <BarChart3 className="w-4 h-4 shrink-0 text-text-secondary" />
+                    Опрос
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -2497,6 +2564,12 @@ export default function ChatView() {
           </div>
         </div>
       )}
+
+      <PollCreateModal
+        chatId={chatId ?? ''}
+        open={showPollModal}
+        onClose={() => setShowPollModal(false)}
+      />
 
       {showChatInfo && currentChat && (
         <ChatInfoModal

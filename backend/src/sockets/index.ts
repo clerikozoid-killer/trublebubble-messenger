@@ -329,6 +329,7 @@ export const setupSocketHandlers = (io: Server) => {
           const { chatId, callId, offer, callType } = data;
           if (!chatId || !callId) return;
           const v = await validatePrivateOneToOne(chatId);
+          console.log('[call] offer', { userId, chatId, callId, callType, allowed: v.allowed, reason: v.allowed ? undefined : v.reason });
           if (!v.allowed) {
             socket.emit('call_rejected', { chatId, callId, reason: v.reason });
             return;
@@ -354,6 +355,7 @@ export const setupSocketHandlers = (io: Server) => {
           const { chatId, callId, answer } = data;
           if (!chatId || !callId) return;
           const v = await validatePrivateOneToOne(chatId);
+          console.log('[call] answer', { userId, chatId, callId, allowed: v.allowed });
           if (!v.allowed) return;
           socket.to(`chat:${chatId}`).emit('call_answer', {
             chatId,
@@ -374,6 +376,8 @@ export const setupSocketHandlers = (io: Server) => {
           const { chatId, callId, candidate } = data;
           if (!chatId || !callId) return;
           const v = await validatePrivateOneToOne(chatId);
+          const hasCandidate = Boolean(candidate);
+          console.log('[call] ice', { userId, chatId, callId, hasCandidate, allowed: v.allowed });
           if (!v.allowed) return;
           socket.to(`chat:${chatId}`).emit('call_ice', {
             chatId,
@@ -394,6 +398,7 @@ export const setupSocketHandlers = (io: Server) => {
           const { chatId, callId, reason } = data;
           if (!chatId || !callId) return;
           const v = await validatePrivateOneToOne(chatId);
+          console.log('[call] rejected', { userId, chatId, callId, allowed: v.allowed, reason });
           if (!v.allowed) return;
           socket.to(`chat:${chatId}`).emit('call_rejected', {
             chatId,
@@ -412,6 +417,7 @@ export const setupSocketHandlers = (io: Server) => {
         const { chatId, callId } = data;
         if (!chatId || !callId) return;
         const v = await validatePrivateOneToOne(chatId);
+        console.log('[call] end', { userId, chatId, callId, allowed: v.allowed });
         if (!v.allowed) return;
         socket.to(`chat:${chatId}`).emit('call_end', { chatId, callId, fromUserId: userId });
       } catch (e) {

@@ -1,4 +1,18 @@
 import { useEffect, useRef } from 'react';
+import { parse } from '@twemoji/parser';
+
+const emojiUrlCache = new Map<string, string>();
+
+function getTwemojiUrl(emoji: string): string | null {
+  const cached = emojiUrlCache.get(emoji);
+  if (cached) return cached;
+
+  // @twemoji/parser returns entities with `url` pointing to SVG on CDN.
+  const entities = parse(emoji);
+  const url = entities?.[0]?.url ?? null;
+  if (url) emojiUrlCache.set(emoji, url);
+  return url;
+}
 
 const EMOJI_GROUPS: { label: string; chars: string[] }[] = [
   {
@@ -110,7 +124,21 @@ export default function EmojiPicker({ open, onClose, onPick, anchorRef }: Props)
                   onClose();
                 }}
               >
-                {ch}
+                {/* Render as Twemoji SVG for consistent quality across devices. */}
+                {(() => {
+                  const url = getTwemojiUrl(ch);
+                  return url ? (
+                    <img
+                      src={url}
+                      alt=""
+                      className="w-6 h-6 object-contain pointer-events-none select-none"
+                      draggable={false}
+                      style={{ filter: 'drop-shadow(0 0 2px rgba(255, 43, 94, 0.35))' }}
+                    />
+                  ) : (
+                    ch
+                  );
+                })()}
               </button>
             ))}
           </div>
