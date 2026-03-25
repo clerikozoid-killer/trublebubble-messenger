@@ -1,7 +1,26 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { parse } from '@twemoji/parser';
 
 const emojiUrlCache = new Map<string, string>();
+const RECENT_KEY = 'truble-bubble-recent-emojis';
+const RECENT_MAX = 24;
+
+// Minimal keyword map (Telegram-like). Can be extended.
+const EMOJI_KEYWORDS: Record<string, string[]> = {
+  '😀': ['smile', 'улыб', 'радост', 'смайл'],
+  '😂': ['lol', 'аха', 'смех', 'смеш', 'laug', 'cry'],
+  '😍': ['love', 'люб', 'серд', 'влюб'],
+  '❤️': ['love', 'heart', 'серд', 'люб'],
+  '🔥': ['fire', 'огонь', 'жар', 'hot'],
+  '👍': ['ok', 'да', 'лайк', 'like', 'thumb'],
+  '👎': ['нет', 'dislike', 'thumb'],
+  '🙏': ['pray', 'пожал', 'спасиб', 'thanks'],
+  '💯': ['100', 'сто', 'класс'],
+  '🎉': ['party', 'празд', 'ура', 'celebrate'],
+  '🤖': ['bot', 'робот'],
+  '🩸': ['blood', 'кров', 'truble', 'bubble', 'капл'],
+  '💧': ['drop', 'капл', 'вода'],
+};
 
 function getTwemojiUrl(emoji: string): string | null {
   const cached = emojiUrlCache.get(emoji);
@@ -12,6 +31,41 @@ function getTwemojiUrl(emoji: string): string | null {
   const url = entities?.[0]?.url ?? null;
   if (url) emojiUrlCache.set(emoji, url);
   return url;
+}
+
+function readRecent(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    const arr = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((x) => typeof x === 'string').slice(0, RECENT_MAX);
+  } catch {
+    return [];
+  }
+}
+
+function writeRecent(list: string[]) {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX)));
+  } catch {
+    // ignore
+  }
+}
+
+function pushRecent(emoji: string) {
+  const cur = readRecent();
+  const next = [emoji, ...cur.filter((e) => e !== emoji)];
+  writeRecent(next);
+}
+
+function emojiMatchesQuery(emoji: string, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  // direct match (user pasted emoji)
+  if (emoji.includes(q)) return true;
+  const kws = EMOJI_KEYWORDS[emoji];
+  if (!kws?.length) return false;
+  return kws.some((k) => k.includes(q));
 }
 
 const EMOJI_GROUPS: { label: string; chars: string[] }[] = [
@@ -56,19 +110,45 @@ const EMOJI_GROUPS: { label: string; chars: string[] }[] = [
       '😳',
       '🥺',
       '😱',
+      '🤩',
+      '🥳',
+      '😎',
+      '🫠',
+      '🫡',
+      '🤗',
+      '🤯',
+      '😴',
+      '🤤',
+      '🤠',
+      '🤓',
+      '😈',
+      '👻',
+      '💀',
     ],
   },
   {
     label: 'Жесты',
-    chars: ['👍', '👎', '👌', '🤌', '✌️', '🤞', '🤝', '🙏', '👏', '🙌', '👋', '💪', '🤷', '🤦'],
+    chars: ['👍', '👎', '👌', '🤌', '✌️', '🤞', '🤝', '🙏', '👏', '🙌', '👋', '💪', '🤷', '🤦', '🫶', '🫰', '🖐️', '✋', '🤟', '☝️'],
   },
   {
     label: 'Сердца',
-    chars: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '💔', '❣️', '💕', '💞', '💓', '💗'],
+    chars: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟'],
   },
   {
     label: 'Разное',
-    chars: ['🔥', '✨', '⭐', '🎉', '💯', '✅', '❌', '⚠️', '📌', '💬', '👀', '🤖', '💡'],
+    chars: ['🔥', '✨', '⭐', '🌟', '🎉', '🎊', '💯', '✅', '❌', '⚠️', '📌', '💬', '👀', '🤖', '💡', '🎵', '🎶', '🎮', '🏆', '🚀'],
+  },
+  {
+    label: 'Животные',
+    chars: ['🐶', '🐱', '🦊', '🐼', '🐻', '🦁', '🐯', '🐸', '🐵', '🐧', '🐤', '🦄', '🐙', '🐬', '🦋'],
+  },
+  {
+    label: 'Еда',
+    chars: ['🍏', '🍓', '🍒', '🍉', '🍕', '🍔', '🌮', '🍜', '🍣', '🍪', '🍩', '🍫', '☕', '🍵', '🥤'],
+  },
+  {
+    label: 'Флаги',
+    chars: ['🇺🇦', '🇷🇺', '🇺🇸', '🇬🇧', '🇩🇪', '🇫🇷', '🇮🇹', '🇪🇸', '🇵🇱', '🇯🇵', '🇰🇷', '🇨🇳'],
   },
   {
     label: 'Капельки (trublebubble)',
@@ -86,9 +166,13 @@ type Props = {
 
 export default function EmojiPicker({ open, onClose, onPick, anchorRef }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState('');
+  const [recent, setRecent] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
+    setQuery('');
+    setRecent(readRecent());
     const onDoc = (e: MouseEvent) => {
       const t = e.target as Node;
       if (panelRef.current?.contains(t)) return;
@@ -101,14 +185,43 @@ export default function EmojiPicker({ open, onClose, onPick, anchorRef }: Props)
 
   if (!open) return null;
 
+  const groups = useMemo(() => {
+    const q = query.trim();
+    const base = EMOJI_GROUPS.map((g) => ({
+      label: g.label,
+      chars: q ? g.chars.filter((e) => emojiMatchesQuery(e, q)) : g.chars,
+    })).filter((g) => g.chars.length > 0);
+
+    if (!q && recent.length > 0) {
+      return [{ label: 'Недавние', chars: recent }, ...base];
+    }
+    return base;
+  }, [query, recent]);
+
+  const pick = (ch: string) => {
+    pushRecent(ch);
+    setRecent(readRecent());
+    onPick(ch);
+    onClose();
+  };
+
   return (
     <div
       ref={panelRef}
-      className="absolute bottom-full right-0 mb-2 w-[min(100vw-2rem,320px)] max-h-[min(50vh,280px)] overflow-y-auto rounded-xl border border-background-light bg-background-medium shadow-2xl z-[80] p-2 animate-scale-in"
+      className="absolute bottom-full right-0 mb-2 w-[min(100vw-2rem,320px)] max-h-[min(55vh,320px)] overflow-y-auto rounded-xl border border-background-light bg-background-medium shadow-2xl z-[80] p-2 animate-scale-in"
       role="listbox"
       aria-label="Эмодзи"
     >
-      {EMOJI_GROUPS.map((g) => (
+      <div className="sticky top-0 bg-background-medium pb-2 z-10">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Поиск эмодзи…"
+          className="w-full px-3 py-2 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors text-sm"
+        />
+      </div>
+
+      {groups.map((g) => (
         <div key={g.label} className="mb-2 last:mb-0">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary px-1 mb-1">
             {g.label}
@@ -119,10 +232,7 @@ export default function EmojiPicker({ open, onClose, onPick, anchorRef }: Props)
                 key={ch}
                 type="button"
                 className="w-9 h-9 text-xl rounded-lg hover:bg-background-light flex items-center justify-center transition-colors"
-                onClick={() => {
-                  onPick(ch);
-                  onClose();
-                }}
+                onClick={() => pick(ch)}
               >
                 {/* Render as Twemoji SVG for consistent quality across devices. */}
                 {(() => {

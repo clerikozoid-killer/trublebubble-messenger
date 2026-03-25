@@ -146,6 +146,20 @@ export default function ChatView() {
   const pendingFromUserIdRef = useRef<string | null>(null);
   const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const wakeKeepAliveTimerRef = useRef<number | null>(null);
+  const [callDebugLogs, setCallDebugLogs] = useState<string[]>([]);
+
+  const pushCallLog = (msg: string, data?: unknown) => {
+    const ts = new Date().toLocaleTimeString();
+    let line = `[${ts}] ${msg}`;
+    if (data !== undefined) {
+      try {
+        line += ` ${JSON.stringify(data)}`;
+      } catch {
+        line += ' [unserializable]';
+      }
+    }
+    setCallDebugLogs((prev) => [...prev.slice(-79), line]);
+  };
 
   const stopWakeKeepAlive = () => {
     if (wakeKeepAliveTimerRef.current != null) {
@@ -157,8 +171,10 @@ export default function ChatView() {
   const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
   const cleanupCall = ({ emitEnd }: { emitEnd: boolean }) => {
+    pushCallLog('cleanupCall()', { emitEnd, chatId, callId: callIdRef.current });
     try {
       if (emitEnd && socket.connected && chatId && callIdRef.current) {
+        pushCallLog('socket.emit(call_end)', { chatId, callId: callIdRef.current });
         socket.emit('call_end', { chatId, callId: callIdRef.current });
       }
     } catch {
@@ -201,6 +217,7 @@ export default function ChatView() {
   };
 
   const createPeerConnection = () => {
+    pushCallLog('createPeerConnection()');
     const pc = new RTCPeerConnection({
       // Только STUN => максимально бесплатно, но возможны звонки "безуспешно" у части сетей.
       iceServers: [
@@ -215,10 +232,12 @@ export default function ChatView() {
       if (!e.candidate) return;
       const candAny = e.candidate as unknown as { toJSON?: () => unknown };
       const candidate = typeof candAny.toJSON === 'function' ? candAny.toJSON() : e.candidate;
+      pushCallLog('socket.emit(call_ice)', { chatId, callId });
       socket.emit('call_ice', { chatId, callId, candidate });
     };
 
     pc.ontrack = (e) => {
+      pushCallLog('pc.ontrack', { kind: e.track.kind, id: e.track.id });
       if (!remoteStreamRef.current) {
         remoteStreamRef.current = new MediaStream();
       }
@@ -234,9 +253,21 @@ export default function ChatView() {
     pc.onconnectionstatechange = () => {
       if (!pcRef.current) return;
       const st = pcRef.current.connectionState;
-      if (st === 'failed' || st === 'closed' || st === 'disconnected') {
-        // Не дёргаем cleanup сразу, чтобы дать ICE время; но если совсем сломалось — очищаем.
+      pushCallLog('pc.connectionState', { state: st });
+      if (st === 'connected') {
+        setCallUi((cur) => (cur ? { ...cur, phase: 'in_call' } : cur));
+        return;
       }
+      if (st === 'failed' || st === 'closed' || st === 'disconnected') {
+        // Fallback: если media-track не пришел, но соединение уже распалось — закрываем звонок.
+        setToast('Call connection lost');
+        cleanupCall({ emitEnd: false });
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (!pcRef.current) return;
+      pushCallLog('pc.iceConnectionState', { state: pcRef.current.iceConnectionState });
     };
 
     pcRef.current = pc;
@@ -256,6 +287,7 @@ export default function ChatView() {
   };
 
   const ensureSocketConnected = async () => {
+    pushCallLog('ensureSocketConnected()', { socketConnected: socket.connected });
     if (socket.connected) return true;
     if (!accessToken) return false;
     socket.connect(accessToken);
@@ -264,10 +296,13 @@ export default function ChatView() {
       if (socket.connected) return true;
       await wait(250);
     }
+    pushCallLog('ensureSocketConnected result', { socketConnected: socket.connected });
     return socket.connected;
   };
 
   const startCallerCall = async (mode: 'audio' | 'video') => {
+    setCallDebugLogs([]);
+    pushCallLog('startCallerCall()', { mode, chatId, userId: user?.id });
     if (!chatId || !user?.id) return;
     if (callRoleRef.current !== 'idle') return;
 
@@ -289,7 +324,9 @@ export default function ChatView() {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
+      pushCallLog('getUserMedia ok (caller)', { mode });
     } catch {
+      pushCallLog('getUserMedia fail (caller)', { mode });
       setToast('Microphone/camera permission denied');
       cleanupCall({ emitEnd: false });
       return;
@@ -309,6 +346,7 @@ export default function ChatView() {
     }
 
     if (!ok) {
+      pushCallLog('wakeBackend fail');
       setToast('Backend is not responding. Try again.');
       cleanupCall({ emitEnd: false });
       return;
@@ -323,6 +361,7 @@ export default function ChatView() {
 
     const connected = await ensureSocketConnected();
     if (!connected) {
+      pushCallLog('socket not connected (caller)');
       setToast('Socket not connected. Try again.');
       cleanupCall({ emitEnd: false });
       return;
@@ -337,6 +376,7 @@ export default function ChatView() {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
+    pushCallLog('socket.emit(call_offer)', { chatId, callId, mode });
     socket.emit('call_offer', {
       chatId,
       callId,
@@ -346,6 +386,7 @@ export default function ChatView() {
   };
 
   const acceptIncomingCall = async () => {
+    pushCallLog('acceptIncomingCall()');
     if (!chatId || !user?.id) return;
     if (callRoleRef.current !== 'callee') return;
     if (!pendingOfferRef.current || !pendingCallTypeRef.current) return;
@@ -357,6 +398,7 @@ export default function ChatView() {
 
     const connected = await ensureSocketConnected();
     if (!connected) {
+      pushCallLog('socket not connected (callee)');
       setToast('Socket not connected');
       cleanupCall({ emitEnd: false });
       return;
@@ -374,7 +416,9 @@ export default function ChatView() {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
+      pushCallLog('getUserMedia ok (callee)', { mode });
     } catch {
+      pushCallLog('getUserMedia fail (callee)', { mode });
       setToast('Microphone/camera permission denied');
       cleanupCall({ emitEnd: false });
       return;
@@ -397,20 +441,24 @@ export default function ChatView() {
       pendingIceCandidatesRef.current = [];
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
+      pushCallLog('socket.emit(call_answer)', { chatId, callId });
       socket.emit('call_answer', { chatId, callId, answer: pc.localDescription });
     } catch {
+      pushCallLog('acceptIncomingCall failed');
       setToast('Call failed to start');
       cleanupCall({ emitEnd: false });
     }
   };
 
   const rejectIncomingCall = () => {
+    pushCallLog('rejectIncomingCall()');
     if (!chatId || callIdRef.current == null) {
       cleanupCall({ emitEnd: false });
       return;
     }
     try {
       if (socket.connected) {
+        pushCallLog('socket.emit(call_rejected)', { chatId, callId: callIdRef.current });
         socket.emit('call_rejected', { chatId, callId: callIdRef.current, reason: 'rejected' });
       }
     } catch {
@@ -420,6 +468,7 @@ export default function ChatView() {
   };
 
   const endCall = () => {
+    pushCallLog('endCall()');
     cleanupCall({ emitEnd: true });
   };
 
@@ -635,6 +684,7 @@ export default function ChatView() {
       callType: 'audio' | 'video';
       fromUserId: string;
     }) => {
+      pushCallLog('socket.on(call_offer)', p);
       if (p.chatId !== chatId) return;
       if (p.fromUserId === user.id) return;
       if (callRoleRef.current !== 'idle') return;
@@ -658,6 +708,7 @@ export default function ChatView() {
       callId: string;
       answer: RTCSessionDescriptionInit;
     }) => {
+      pushCallLog('socket.on(call_answer)', p);
       if (p.chatId !== chatId) return;
       if (callRoleRef.current !== 'caller') return;
       if (callIdRef.current == null || p.callId !== callIdRef.current) return;
@@ -684,6 +735,7 @@ export default function ChatView() {
       callId: string;
       candidate: RTCIceCandidateInit;
     }) => {
+      pushCallLog('socket.on(call_ice)', { chatId: p.chatId, callId: p.callId, hasCandidate: Boolean(p.candidate) });
       if (p.chatId !== chatId) return;
       if (callIdRef.current == null || p.callId !== callIdRef.current) return;
       try {
@@ -704,6 +756,7 @@ export default function ChatView() {
     };
 
     const onRejected = (p: { chatId: string; callId: string; reason?: string }) => {
+      pushCallLog('socket.on(call_rejected)', p);
       if (p.chatId !== chatId) return;
       if (callRoleRef.current !== 'caller') return;
       if (callIdRef.current == null || p.callId !== callIdRef.current) return;
@@ -712,6 +765,7 @@ export default function ChatView() {
     };
 
     const onEnd = (p: { chatId: string; callId: string }) => {
+      pushCallLog('socket.on(call_end)', p);
       if (p.chatId !== chatId) return;
       if (callIdRef.current == null || p.callId !== callIdRef.current) return;
       cleanupCall({ emitEnd: false });
@@ -1361,23 +1415,45 @@ export default function ChatView() {
             </div>
 
             <div className="relative px-4 py-4">
-              <div className="grid grid-cols-1 gap-3">
-                <video
-                  ref={remoteVideoRef}
-                  autoPlay
-                  playsInline
-                  className="w-full h-56 bg-black rounded-lg object-cover"
-                />
-                <div className="flex justify-end">
+              {callUi.mode === 'audio' ? (
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="w-full h-56 rounded-lg bg-background-dark/70 border border-background-medium/60 flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-3 text-text-secondary">
+                      <Phone className="w-10 h-10 text-primary" />
+                      <span className="text-sm">
+                        {callUi.phase === 'in_call' ? 'Voice call in progress' : 'Connecting voice call...'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-28 h-20 bg-black rounded-lg object-cover opacity-60"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
                   <video
-                    ref={localVideoRef}
+                    ref={remoteVideoRef}
                     autoPlay
                     playsInline
-                    muted
-                    className={`w-28 h-20 bg-black rounded-lg object-cover ${callUi.mode === 'audio' ? 'opacity-70' : ''}`}
+                    className="w-full h-56 bg-black rounded-lg object-cover"
                   />
+                  <div className="flex justify-end">
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-28 h-20 bg-black rounded-lg object-cover"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {callUi.phase === 'waking' && (
                 <div className="absolute inset-0 bg-background-light/40 backdrop-blur-sm flex items-center justify-center">
@@ -1413,6 +1489,22 @@ export default function ChatView() {
                   End
                 </button>
               )}
+            </div>
+            <div className="px-4 pb-3">
+              <div className="rounded-lg bg-background-dark/60 border border-background-medium/70 p-2 max-h-24 overflow-y-auto">
+                <div className="text-[11px] text-text-secondary mb-1">Call debug log</div>
+                {callDebugLogs.length === 0 ? (
+                  <div className="text-[11px] text-text-secondary/80">No events yet…</div>
+                ) : (
+                  <div className="space-y-0.5">
+                    {callDebugLogs.map((l, i) => (
+                      <div key={`${i}-${l.slice(0, 24)}`} className="text-[11px] leading-4 text-text-primary/90 break-all font-mono">
+                        {l}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -2064,6 +2156,20 @@ export default function ChatView() {
                               {!message.isDeleted && (
                                 <button
                                   type="button"
+                                  onClick={() => {
+                                    setReplyingTo(message);
+                                    setShowMessageMenu(null);
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
+                                >
+                                  <Reply className="w-4 h-4" />
+                                  Ответить
+                                </button>
+                              )}
+                              <div className="my-1 border-t border-background-medium/80" />
+                              {!message.isDeleted && (
+                                <button
+                                  type="button"
                                   onClick={() => handleSaveToSaved(message)}
                                   className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
                                 >
@@ -2127,6 +2233,7 @@ export default function ChatView() {
                               )}
                               {isOutgoing && (
                                 <>
+                                  <div className="my-1 border-t border-background-medium/80" />
                                   <button
                                     type="button"
                                     onClick={() => handleEditMessage(message)}

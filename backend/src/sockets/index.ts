@@ -322,6 +322,14 @@ export const setupSocketHandlers = (io: Server) => {
       return { allowed: true as const };
     };
 
+    const getPeerUserIds = async (chatId: string) => {
+      const members = await prisma.chatMember.findMany({
+        where: { chatId },
+        select: { userId: true },
+      });
+      return members.map((m) => m.userId).filter((id) => id !== userId);
+    };
+
     socket.on(
       'call_offer',
       async (data: { chatId: string; callId: string; offer: unknown; callType: 'audio' | 'video' }) => {
@@ -334,13 +342,16 @@ export const setupSocketHandlers = (io: Server) => {
             socket.emit('call_rejected', { chatId, callId, reason: v.reason });
             return;
           }
-          // Forward to the other member in the same chat room.
-          socket.to(`chat:${chatId}`).emit('call_offer', {
-            chatId,
-            callId,
-            offer,
-            callType,
-            fromUserId: userId,
+          // More reliable than chat-room fanout: send directly to peer user room(s).
+          const peers = await getPeerUserIds(chatId);
+          peers.forEach((peerId) => {
+            io.to(`user:${peerId}`).emit('call_offer', {
+              chatId,
+              callId,
+              offer,
+              callType,
+              fromUserId: userId,
+            });
           });
         } catch (e) {
           console.error('call_offer error:', e);
@@ -357,11 +368,14 @@ export const setupSocketHandlers = (io: Server) => {
           const v = await validatePrivateOneToOne(chatId);
           console.log('[call] answer', { userId, chatId, callId, allowed: v.allowed });
           if (!v.allowed) return;
-          socket.to(`chat:${chatId}`).emit('call_answer', {
-            chatId,
-            callId,
-            answer,
-            fromUserId: userId,
+          const peers = await getPeerUserIds(chatId);
+          peers.forEach((peerId) => {
+            io.to(`user:${peerId}`).emit('call_answer', {
+              chatId,
+              callId,
+              answer,
+              fromUserId: userId,
+            });
           });
         } catch (e) {
           console.error('call_answer error:', e);
@@ -379,11 +393,14 @@ export const setupSocketHandlers = (io: Server) => {
           const hasCandidate = Boolean(candidate);
           console.log('[call] ice', { userId, chatId, callId, hasCandidate, allowed: v.allowed });
           if (!v.allowed) return;
-          socket.to(`chat:${chatId}`).emit('call_ice', {
-            chatId,
-            callId,
-            candidate,
-            fromUserId: userId,
+          const peers = await getPeerUserIds(chatId);
+          peers.forEach((peerId) => {
+            io.to(`user:${peerId}`).emit('call_ice', {
+              chatId,
+              callId,
+              candidate,
+              fromUserId: userId,
+            });
           });
         } catch (e) {
           console.error('call_ice error:', e);
@@ -400,11 +417,14 @@ export const setupSocketHandlers = (io: Server) => {
           const v = await validatePrivateOneToOne(chatId);
           console.log('[call] rejected', { userId, chatId, callId, allowed: v.allowed, reason });
           if (!v.allowed) return;
-          socket.to(`chat:${chatId}`).emit('call_rejected', {
-            chatId,
-            callId,
-            reason,
-            fromUserId: userId,
+          const peers = await getPeerUserIds(chatId);
+          peers.forEach((peerId) => {
+            io.to(`user:${peerId}`).emit('call_rejected', {
+              chatId,
+              callId,
+              reason,
+              fromUserId: userId,
+            });
           });
         } catch (e) {
           console.error('call_rejected error:', e);
@@ -419,7 +439,10 @@ export const setupSocketHandlers = (io: Server) => {
         const v = await validatePrivateOneToOne(chatId);
         console.log('[call] end', { userId, chatId, callId, allowed: v.allowed });
         if (!v.allowed) return;
-        socket.to(`chat:${chatId}`).emit('call_end', { chatId, callId, fromUserId: userId });
+        const peers = await getPeerUserIds(chatId);
+        peers.forEach((peerId) => {
+          io.to(`user:${peerId}`).emit('call_end', { chatId, callId, fromUserId: userId });
+        });
       } catch (e) {
         console.error('call_end error:', e);
       }
