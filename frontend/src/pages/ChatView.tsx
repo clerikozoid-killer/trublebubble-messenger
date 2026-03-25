@@ -22,6 +22,7 @@ import {
   Square,
   Reply,
   Edit,
+  Copy,
   Trash2,
   X,
   Users,
@@ -476,14 +477,27 @@ export default function ChatView() {
   }, []);
 
   useEffect(() => {
-    if (chatId) {
+    if (!chatId) return;
+
+    let cancelled = false;
+
+    (async () => {
       fetchChat(chatId);
       fetchMessages(chatId);
       markChatAsRead(chatId);
-      socket.joinChat(chatId);
-    }
+
+      // Важно: join_chat должен отправляться только когда сокет подключён.
+      // Иначе событие теряется (в `socket.emit` есть блокировка по `!socket.connected`),
+      // а сигналинг звонков дальше не доходит в комнату `chat:<chatId>`.
+      const connected = await ensureSocketConnected();
+      if (cancelled) return;
+      if (connected) {
+        socket.joinChat(chatId);
+      }
+    })();
 
     return () => {
+      cancelled = true;
       if (chatId) {
         socket.leaveChat(chatId);
       }
@@ -492,7 +506,7 @@ export default function ChatView() {
       }
       stopMicStream();
     };
-  }, [chatId, fetchChat, fetchMessages, markChatAsRead]);
+  }, [chatId, fetchChat, fetchMessages, markChatAsRead, accessToken]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1149,6 +1163,37 @@ export default function ChatView() {
     const above = y > window.innerHeight - 240;
     setMessageMenuPlacement(above ? 'above' : 'below');
     setShowMessageMenu(m);
+  };
+
+  const handleCopyMessage = async (m: Message) => {
+    const text = m.content?.trim();
+    if (!text) return;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setToast('Copied');
+      setShowMessageMenu(null);
+      return;
+    } catch {
+      // Fallback for older browsers / non-https contexts.
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', 'true');
+        ta.style.position = 'fixed';
+        ta.style.top = '0';
+        ta.style.left = '0';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setToast('Copied');
+        setShowMessageMenu(null);
+      } catch {
+        setToast('Could not copy');
+      }
+    }
   };
 
   const handleDeleteChat = async () => {
@@ -1814,11 +1859,21 @@ export default function ChatView() {
                           }`}
                         >
                           {message.replyTo && (
-                            <div className="border-l-2 border-text-secondary/30 pl-2 mb-2">
-                              <p className="text-xs text-text-secondary">
+                            <div
+                              className={`border-l-2 pl-2 mb-2 ${
+                                isOutgoing ? 'border-white/25' : 'border-text-secondary/30'
+                              }`}
+                            >
+                              <p
+                                className={`text-xs ${isOutgoing ? 'text-white/70' : 'text-text-secondary'}`}
+                              >
                                 {message.replyTo.sender.displayName}
                               </p>
-                              <p className="text-sm text-text-secondary truncate">
+                              <p
+                                className={`text-sm truncate ${
+                                  isOutgoing ? 'text-white/80' : 'text-text-secondary'
+                                }`}
+                              >
                                 {message.replyTo.content}
                               </p>
                             </div>
@@ -2007,6 +2062,16 @@ export default function ChatView() {
                                 >
                                   <MapPin className="w-4 h-4" />
                                   {pinnedMessage?.messageId === message.id ? t('message.unpin') : t('message.pin')}
+                                </button>
+                              )}
+                              {!message.isDeleted && message.content && (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleCopyMessage(message)}
+                                  className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
+                                >
+                                  <Copy className="w-4 h-4" />
+                                  Копировать текст
                                 </button>
                               )}
                               {isOutgoing && (

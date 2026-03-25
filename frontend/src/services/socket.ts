@@ -1,7 +1,9 @@
 import { io, Socket } from 'socket.io-client';
 import { isDebugUiEnabled, logUi, sanitizeSocketPayload } from '../utils/debugUi';
 
-const WS_URL = import.meta.env.VITE_WS_URL || '';
+// Для socket.io клиенту нужен URL backend'а (обычно совпадает с VITE_API_URL).
+// Если `VITE_WS_URL` не задан, берём `VITE_API_URL` — так звонки не зависят от наличия отдельной переменной.
+const WS_URL = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL || '';
 
 class SocketService {
   private socket: Socket | null = null;
@@ -26,13 +28,13 @@ class SocketService {
       });
     }
 
-    this.socket = io(WS_URL, {
+    this.socket = io(WS_URL || undefined, {
       auth: { token },
       // Для polling/прокси токен может приходить не из handshake.auth — дублируем в query.
       query: { token },
       // Prefer WebSocket only for lower latency (no polling bootstrap).
       // If your network blocks WebSocket, switch back to polling+websocket.
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       path: '/socket.io',
       reconnection: true,
       reconnectionAttempts: Infinity,

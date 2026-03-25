@@ -68,7 +68,8 @@ body {
 
 /* Selection */
 ::selection {
-  background: rgba(0, 136, 204, 0.4);
+  background: rgba(0, 136, 204, 0.7);
+  color: #ffffff;
 }
 
 /* Focus outline */
