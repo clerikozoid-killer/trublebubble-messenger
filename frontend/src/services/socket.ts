@@ -35,9 +35,10 @@ class SocketService {
       transports: ['websocket'],
       path: '/socket.io',
       reconnection: true,
-      reconnectionAttempts: 12,
-      reconnectionDelay: 1500,
-      reconnectionDelayMax: 15000,
+      reconnectionAttempts: Infinity,
+      // Быстрее восстанавливаемся после обрыва.
+      reconnectionDelay: 800,
+      reconnectionDelayMax: 20000,
       timeout: 45000,
     });
 
@@ -76,6 +77,11 @@ class SocketService {
       'user_online',
       'user_offline',
       'typing',
+      'call_offer',
+      'call_answer',
+      'call_ice',
+      'call_end',
+      'call_rejected',
       'error',
     ];
 

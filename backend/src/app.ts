@@ -10,6 +10,7 @@ import userRoutes from './routes/user.routes.js';
 import chatRoutes from './routes/chat.routes.js';
 import messageRoutes from './routes/message.routes.js';
 import adminRoutes from './routes/admin.routes.js';
+import translateRoutes from './routes/translate.routes.js';
 import { bootstrapAdmin } from './bootstrapAdmin.js';
 import { bootstrapBubbleBot } from './bootstrapBubbleBot.js';
 import { errorMiddleware } from './middleware/error.middleware.js';
@@ -59,6 +60,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/translate', translateRoutes);
 
 // Error handling
 app.use(errorMiddleware);

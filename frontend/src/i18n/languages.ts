@@ -1,4 +1,4 @@
-export type LangCode = 'ru' | 'ang' | 'grc' | 'sa' | 'eo' | 'dothraki' | 'tlh';
+export type LangCode = 'ru' | 'en' | 'ang' | 'grc' | 'sa' | 'eo' | 'dothraki' | 'tlh';
 
 export const LANGUAGES: Array<{
   code: LangCode;
@@ -6,6 +6,7 @@ export const LANGUAGES: Array<{
   htmlLang: string;
 }> = [
   { code: 'ru', label: 'Русский', htmlLang: 'ru' },
+  { code: 'en', label: 'English', htmlLang: 'en' },
   { code: 'ang', label: 'Anglo-Saxon', htmlLang: 'ang' },
   { code: 'grc', label: 'Ancient Greek', htmlLang: 'el' },
   { code: 'sa', label: 'Sanskrit', htmlLang: 'sa' },

@@ -300,6 +300,125 @@ export const setupSocketHandlers = (io: Server) => {
       });
     });
 
+    // Calls: только 1:1, запрет в группах/каналах
+    const validatePrivateOneToOne = async (chatId: string) => {
+      // Caller must be a member
+      const membership = await prisma.chatMember.findUnique({
+        where: { chatId_userId: { chatId, userId } },
+      });
+      if (!membership) return { allowed: false as const, reason: 'Access denied' };
+
+      const chat = await prisma.chat.findUnique({
+        where: { id: chatId },
+        select: {
+          type: true,
+          members: { select: { userId: true } },
+        },
+      });
+
+      if (!chat) return { allowed: false as const, reason: 'Chat not found' };
+      if (chat.type !== 'PRIVATE') return { allowed: false as const, reason: 'Calls are allowed only in 1:1 private chats' };
+      if (chat.members.length !== 2) return { allowed: false as const, reason: 'Calls require exactly 2 members' };
+      return { allowed: true as const };
+    };
+
+    socket.on(
+      'call_offer',
+      async (data: { chatId: string; callId: string; offer: unknown; callType: 'audio' | 'video' }) => {
+        try {
+          const { chatId, callId, offer, callType } = data;
+          if (!chatId || !callId) return;
+          const v = await validatePrivateOneToOne(chatId);
+          if (!v.allowed) {
+            socket.emit('call_rejected', { chatId, callId, reason: v.reason });
+            return;
+          }
+          // Forward to the other member in the same chat room.
+          socket.to(`chat:${chatId}`).emit('call_offer', {
+            chatId,
+            callId,
+            offer,
+            callType,
+            fromUserId: userId,
+          });
+        } catch (e) {
+          console.error('call_offer error:', e);
+        }
+      }
+    );
+
+    socket.on(
+      'call_answer',
+      async (data: { chatId: string; callId: string; answer: unknown }) => {
+        try {
+          const { chatId, callId, answer } = data;
+          if (!chatId || !callId) return;
+          const v = await validatePrivateOneToOne(chatId);
+          if (!v.allowed) return;
+          socket.to(`chat:${chatId}`).emit('call_answer', {
+            chatId,
+            callId,
+            answer,
+            fromUserId: userId,
+          });
+        } catch (e) {
+          console.error('call_answer error:', e);
+        }
+      }
+    );
+
+    socket.on(
+      'call_ice',
+      async (data: { chatId: string; callId: string; candidate: unknown }) => {
+        try {
+          const { chatId, callId, candidate } = data;
+          if (!chatId || !callId) return;
+          const v = await validatePrivateOneToOne(chatId);
+          if (!v.allowed) return;
+          socket.to(`chat:${chatId}`).emit('call_ice', {
+            chatId,
+            callId,
+            candidate,
+            fromUserId: userId,
+          });
+        } catch (e) {
+          console.error('call_ice error:', e);
+        }
+      }
+    );
+
+    socket.on(
+      'call_rejected',
+      async (data: { chatId: string; callId: string; reason?: string }) => {
+        try {
+          const { chatId, callId, reason } = data;
+          if (!chatId || !callId) return;
+          const v = await validatePrivateOneToOne(chatId);
+          if (!v.allowed) return;
+          socket.to(`chat:${chatId}`).emit('call_rejected', {
+            chatId,
+            callId,
+            reason,
+            fromUserId: userId,
+          });
+        } catch (e) {
+          console.error('call_rejected error:', e);
+        }
+      }
+    );
+
+    socket.on('call_end', async (data: { chatId: string; callId: string }) => {
+      try {
+        const { chatId, callId } = data;
+        if (!chatId || !callId) return;
+        const v = await validatePrivateOneToOne(chatId);
+        if (!v.allowed) return;
+        socket.to(`chat:${chatId}`).emit('call_end', { chatId, callId, fromUserId: userId });
+      } catch (e) {
+        console.error('call_end error:', e);
+      }
+    });
+
     // Handle marking messages as read
     socket.on('mark_read', async (data: { chatId: string; messageId?: string }) => {
       try {

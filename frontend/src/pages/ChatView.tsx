@@ -5,6 +5,7 @@ import { useChatStore } from '../stores/chatStore';
 import { useMessageStore } from '../stores/messageStore';
 import { socket } from '../services/socket';
 import { api } from '../services/api';
+import CallSlapWaking from '../components/CallSlapWaking';
 import {
   ArrowLeft,
   Search,
@@ -49,10 +50,16 @@ import { parseActiveMention } from '../utils/mentionParse';
 import { addSavedMessage } from '../utils/savedMessages';
 import { getPinnedMessage, togglePinnedMessage, clearPinnedMessage } from '../utils/pinnedMessages';
 import { useI18n } from '../i18n/useI18n';
+import { getDiscussionLink, setDiscussionLink, getParentDiscussionLink } from '../utils/discussionLinks';
+import { getReaction, setReaction } from '../utils/messageReactions';
+import { translateText } from '../utils/translateText';
+import { useLanguageStore } from '../stores/languageStore';
 
 function memberLabel(count: number) {
   return `${count} ${count === 1 ? 'member' : 'members'}`;
 }
+
+const REACTION_EMOJIS = ['😀', '❤️', '😂', '🔥', '😮', '🤔', '🙏', '👎'];
 
 type PendingAttachment = { id: string; file: File; previewUrl: string };
 
@@ -61,8 +68,9 @@ type ChatSearchFilter = 'all' | 'IMAGE' | 'VIDEO' | 'FILE' | 'VOICE';
 export default function ChatView() {
   const { chatId } = useParams<{ chatId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuthStore();
+  const { user, accessToken } = useAuthStore();
   const { t } = useI18n();
+  const language = useLanguageStore((s) => s.language);
   const { currentChat, fetchChat, markChatAsRead, removeChat, updateChat, createChat } = useChatStore();
   const { messages, fetchMessages, editMessage, deleteMessage, clearChatMessages, sendMessage } = useMessageStore();
 
@@ -73,6 +81,8 @@ export default function ChatView() {
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [showMessageMenu, setShowMessageMenu] = useState<Message | null>(null);
+  const [messageMenuPlacement, setMessageMenuPlacement] = useState<'above' | 'below'>('below');
+  const [, setReactionVersion] = useState(0);
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [showChatSearch, setShowChatSearch] = useState(false);
   const [messageSearchQuery, setMessageSearchQuery] = useState('');
@@ -88,6 +98,311 @@ export default function ChatView() {
     if (!user?.id || !chatId) return null;
     return getPinnedMessage(user.id, chatId);
   }, [user?.id, chatId, pinVersion]);
+
+  const parentDiscussion = useMemo(() => {
+    if (!user?.id || !chatId) return null;
+    return getParentDiscussionLink(user.id, chatId);
+  }, [user?.id, chatId]);
+
+  // --- 1:1 Calls (WebRTC signaling через socket.io) ---
+  const [callUi, setCallUi] = useState<null | {
+    mode: 'audio' | 'video';
+    phase: 'waking' | 'incoming' | 'calling' | 'in_call' | 'rejected' | 'ended';
+    callId: string;
+    fromUserId: string;
+  }>(null);
+
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  const callRoleRef = useRef<'idle' | 'caller' | 'callee'>('idle');
+  const callIdRef = useRef<string | null>(null);
+  const pendingOfferRef = useRef<RTCSessionDescriptionInit | null>(null);
+  const pendingCallTypeRef = useRef<'audio' | 'video' | null>(null);
+  const pendingFromUserIdRef = useRef<string | null>(null);
+  const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const wakeKeepAliveTimerRef = useRef<number | null>(null);
+
+  const stopWakeKeepAlive = () => {
+    if (wakeKeepAliveTimerRef.current != null) {
+      window.clearInterval(wakeKeepAliveTimerRef.current);
+      wakeKeepAliveTimerRef.current = null;
+    }
+  };
+
+  const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  const cleanupCall = ({ emitEnd }: { emitEnd: boolean }) => {
+    try {
+      if (emitEnd && socket.connected && chatId && callIdRef.current) {
+        socket.emit('call_end', { chatId, callId: callIdRef.current });
+      }
+    } catch {
+      // ignore
+    }
+
+    stopWakeKeepAlive();
+
+    try {
+      pcRef.current?.close();
+    } catch {
+      /* ignore */
+    }
+    pcRef.current = null;
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+    }
+    localStreamRef.current = null;
+
+    remoteStreamRef.current = null;
+
+    if (localVideoRef.current) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (localVideoRef.current as any).srcObject = null;
+    }
+    if (remoteVideoRef.current) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (remoteVideoRef.current as any).srcObject = null;
+    }
+
+    callRoleRef.current = 'idle';
+    callIdRef.current = null;
+    pendingOfferRef.current = null;
+    pendingCallTypeRef.current = null;
+    pendingFromUserIdRef.current = null;
+    pendingIceCandidatesRef.current = [];
+
+    setCallUi(null);
+  };
+
+  const createPeerConnection = () => {
+    const pc = new RTCPeerConnection({
+      // Только STUN => максимально бесплатно, но возможны звонки "безуспешно" у части сетей.
+      iceServers: [
+        { urls: ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.com:3478'] },
+      ],
+    });
+
+    pc.onicecandidate = (e) => {
+      const callId = callIdRef.current;
+      if (!chatId) return;
+      if (!callId) return;
+      if (!e.candidate) return;
+      const candAny = e.candidate as unknown as { toJSON?: () => unknown };
+      const candidate = typeof candAny.toJSON === 'function' ? candAny.toJSON() : e.candidate;
+      socket.emit('call_ice', { chatId, callId, candidate });
+    };
+
+    pc.ontrack = (e) => {
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = new MediaStream();
+      }
+      remoteStreamRef.current.addTrack(e.track);
+      if (remoteVideoRef.current) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (remoteVideoRef.current as any).srcObject = remoteStreamRef.current;
+        void remoteVideoRef.current.play().catch(() => undefined);
+      }
+      setCallUi((cur) => (cur ? { ...cur, phase: 'in_call' } : cur));
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (!pcRef.current) return;
+      const st = pcRef.current.connectionState;
+      if (st === 'failed' || st === 'closed' || st === 'disconnected') {
+        // Не дёргаем cleanup сразу, чтобы дать ICE время; но если совсем сломалось — очищаем.
+      }
+    };
+
+    pcRef.current = pc;
+    return pc;
+  };
+
+  const setLocalStreamToVideo = (stream: MediaStream, mode: 'audio' | 'video') => {
+    localStreamRef.current = stream;
+    if (localVideoRef.current) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (localVideoRef.current as any).srcObject = stream;
+      void localVideoRef.current.play().catch(() => undefined);
+    }
+    if (mode === 'audio' && remoteVideoRef.current) {
+      // audio-call мы всё равно показываем видео как контейнер, но пользователь его не увидит (opacity).
+    }
+  };
+
+  const ensureSocketConnected = async () => {
+    if (socket.connected) return true;
+    if (!accessToken) return false;
+    socket.connect(accessToken);
+    const start = Date.now();
+    while (Date.now() - start < 10000) {
+      if (socket.connected) return true;
+      await wait(250);
+    }
+    return socket.connected;
+  };
+
+  const startCallerCall = async (mode: 'audio' | 'video') => {
+    if (!chatId || !user?.id) return;
+    if (callRoleRef.current !== 'idle') return;
+
+    const callId =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    callRoleRef.current = 'caller';
+    callIdRef.current = callId;
+
+    setCallUi({ mode, phase: 'waking', callId, fromUserId: user.id });
+
+    // 1) поднимаем локальный медиа (пользователь даст доступ)
+    const constraints =
+      mode === 'video'
+        ? { audio: true, video: { facingMode: 'user' as const } }
+        : { audio: true, video: false };
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch {
+      setToast('Microphone/camera permission denied');
+      cleanupCall({ emitEnd: false });
+      return;
+    }
+    setLocalStreamToVideo(stream, mode);
+
+    // 2) разбудить backend (Render free)
+    let ok = false;
+    for (let i = 0; i < 6; i++) {
+      try {
+        await api.wakeBackend();
+        ok = true;
+        break;
+      } catch {
+        await wait(500);
+      }
+    }
+
+    if (!ok) {
+      setToast('Backend is not responding. Try again.');
+      cleanupCall({ emitEnd: false });
+      return;
+    }
+
+    // держим сервер активным во время звонка (минимально: раз в ~25с)
+    if (wakeKeepAliveTimerRef.current == null) {
+      wakeKeepAliveTimerRef.current = window.setInterval(() => {
+        void api.wakeBackend().catch(() => undefined);
+      }, 25000);
+    }
+
+    const connected = await ensureSocketConnected();
+    if (!connected) {
+      setToast('Socket not connected. Try again.');
+      cleanupCall({ emitEnd: false });
+      return;
+    }
+
+    // 3) сигнализация offer
+    const pc = createPeerConnection();
+    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+
+    setCallUi((cur) => (cur ? { ...cur, phase: 'calling' } : cur));
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    socket.emit('call_offer', {
+      chatId,
+      callId,
+      offer: pc.localDescription,
+      callType: mode,
+    });
+  };
+
+  const acceptIncomingCall = async () => {
+    if (!chatId || !user?.id) return;
+    if (callRoleRef.current !== 'callee') return;
+    if (!pendingOfferRef.current || !pendingCallTypeRef.current) return;
+    if (callIdRef.current == null) return;
+
+    const mode = pendingCallTypeRef.current;
+    const offerInit = pendingOfferRef.current;
+    const callId = callIdRef.current;
+
+    const connected = await ensureSocketConnected();
+    if (!connected) {
+      setToast('Socket not connected');
+      cleanupCall({ emitEnd: false });
+      return;
+    }
+
+    setCallUi((cur) =>
+      cur ? { ...cur, phase: 'calling' } : cur
+    );
+
+    const constraints =
+      mode === 'video'
+        ? { audio: true, video: { facingMode: 'user' as const } }
+        : { audio: true, video: false };
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch {
+      setToast('Microphone/camera permission denied');
+      cleanupCall({ emitEnd: false });
+      return;
+    }
+
+    setLocalStreamToVideo(stream, mode);
+
+    const pc = createPeerConnection();
+    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(offerInit));
+      for (const c of pendingIceCandidatesRef.current) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(c));
+        } catch {
+          // ignore
+        }
+      }
+      pendingIceCandidatesRef.current = [];
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit('call_answer', { chatId, callId, answer: pc.localDescription });
+    } catch {
+      setToast('Call failed to start');
+      cleanupCall({ emitEnd: false });
+    }
+  };
+
+  const rejectIncomingCall = () => {
+    if (!chatId || callIdRef.current == null) {
+      cleanupCall({ emitEnd: false });
+      return;
+    }
+    try {
+      if (socket.connected) {
+        socket.emit('call_rejected', { chatId, callId: callIdRef.current, reason: 'rejected' });
+      }
+    } catch {
+      // ignore
+    }
+    cleanupCall({ emitEnd: false });
+  };
+
+  const endCall = () => {
+    cleanupCall({ emitEnd: true });
+  };
+
   const BUBBLE_BOT_USERNAME = 'bubble_bot';
   const chatThemeId = useChatThemeStore((s) => (chatId ? s.getChatTheme(chatId) : 'default'));
   const setChatTheme = useChatThemeStore((s) => s.setChatTheme);
@@ -183,6 +498,32 @@ export default function ChatView() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [filteredMessages]);
 
+  const requestedTranslationsRef = useRef<Set<string>>(new Set());
+  const lastTranslatedLangRef = useRef(language);
+
+  useEffect(() => {
+    if (!chatId) return;
+
+    if (lastTranslatedLangRef.current !== language) {
+      lastTranslatedLangRef.current = language;
+      requestedTranslationsRef.current = new Set();
+    }
+
+    if (!language || language === 'ru') return;
+
+    const toTranslate = chatMessages.slice(-30);
+    for (const m of toTranslate) {
+      if (!m.content || m.contentType !== 'TEXT') continue;
+      if (requestedTranslationsRef.current.has(m.id)) continue;
+      requestedTranslationsRef.current.add(m.id);
+
+      void translateText(m.content, language).then((out) => {
+        if (!out || out === m.content) return;
+        useMessageStore.getState().updateMessage(chatId, m.id, { content: out });
+      });
+    }
+  }, [chatId, chatMessages, language]);
+
   useEffect(() => {
     const handleNewMessage = (message: Message) => {
       if (message.chatId === chatId) {
@@ -245,6 +586,114 @@ export default function ChatView() {
       socket.off('message_edited', handleMessageEdited);
       socket.off('message_deleted', handleMessageDeleted);
       socket.off('typing', handleTyping);
+    };
+  }, [chatId, user]);
+
+  // --- Call signaling listeners ---
+  useEffect(() => {
+    if (!chatId || !user?.id) return;
+
+    const onOffer = async (p: {
+      chatId: string;
+      callId: string;
+      offer: RTCSessionDescriptionInit;
+      callType: 'audio' | 'video';
+      fromUserId: string;
+    }) => {
+      if (p.chatId !== chatId) return;
+      if (p.fromUserId === user.id) return;
+      if (callRoleRef.current !== 'idle') return;
+
+      callRoleRef.current = 'callee';
+      callIdRef.current = p.callId;
+      pendingOfferRef.current = p.offer;
+      pendingCallTypeRef.current = p.callType;
+      pendingFromUserIdRef.current = p.fromUserId;
+
+      setCallUi({
+        mode: p.callType,
+        phase: 'incoming',
+        callId: p.callId,
+        fromUserId: p.fromUserId,
+      });
+    };
+
+    const onAnswer = async (p: {
+      chatId: string;
+      callId: string;
+      answer: RTCSessionDescriptionInit;
+    }) => {
+      if (p.chatId !== chatId) return;
+      if (callRoleRef.current !== 'caller') return;
+      if (callIdRef.current == null || p.callId !== callIdRef.current) return;
+      if (!pcRef.current) return;
+
+      try {
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(p.answer));
+        for (const c of pendingIceCandidatesRef.current) {
+          try {
+            await pcRef.current.addIceCandidate(new RTCIceCandidate(c));
+          } catch {
+            // ignore
+          }
+        }
+        pendingIceCandidatesRef.current = [];
+        setCallUi((cur) => (cur ? { ...cur, phase: 'calling' } : cur));
+      } catch {
+        // ignore (ICE candidates may still arrive)
+      }
+    };
+
+    const onIce = async (p: {
+      chatId: string;
+      callId: string;
+      candidate: RTCIceCandidateInit;
+    }) => {
+      if (p.chatId !== chatId) return;
+      if (callIdRef.current == null || p.callId !== callIdRef.current) return;
+      try {
+        if (!p.candidate) return;
+        if (!pcRef.current) {
+          pendingIceCandidatesRef.current.push(p.candidate);
+          return;
+        }
+        // Если remoteDescription ещё не выставлен — складываем, чтобы не потерять ICE.
+        if (!pcRef.current.remoteDescription) {
+          pendingIceCandidatesRef.current.push(p.candidate);
+          return;
+        }
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(p.candidate));
+      } catch {
+        // ignore
+      }
+    };
+
+    const onRejected = (p: { chatId: string; callId: string; reason?: string }) => {
+      if (p.chatId !== chatId) return;
+      if (callRoleRef.current !== 'caller') return;
+      if (callIdRef.current == null || p.callId !== callIdRef.current) return;
+      setToast(p.reason ? `Call rejected: ${p.reason}` : 'Call rejected');
+      cleanupCall({ emitEnd: false });
+    };
+
+    const onEnd = (p: { chatId: string; callId: string }) => {
+      if (p.chatId !== chatId) return;
+      if (callIdRef.current == null || p.callId !== callIdRef.current) return;
+      cleanupCall({ emitEnd: false });
+    };
+
+    socket.on('call_offer', onOffer);
+    socket.on('call_answer', onAnswer);
+    socket.on('call_ice', onIce);
+    socket.on('call_rejected', onRejected);
+    socket.on('call_end', onEnd);
+
+    return () => {
+      socket.off('call_offer', onOffer);
+      socket.off('call_answer', onAnswer);
+      socket.off('call_ice', onIce);
+      socket.off('call_rejected', onRejected);
+      socket.off('call_end', onEnd);
     };
   }, [chatId, user]);
 
@@ -364,7 +813,6 @@ export default function ChatView() {
     setUploadBusy(true);
     try {
       const sockConnected = socket.connected;
-      let didFallback = false;
 
       if (hasText) {
         const content = messageInput.trim();
@@ -378,10 +826,6 @@ export default function ChatView() {
         } else {
           // Fallback: persist via HTTP so the sender sees the message immediately.
           await sendMessage(chatId, content, 'TEXT', rid);
-          if (!didFallback) {
-            didFallback = true;
-            setToast('Сокет недоступен — отправлено через HTTP');
-          }
         }
         setMessageInput('');
       }
@@ -414,10 +858,6 @@ export default function ChatView() {
             replyToId,
           });
           useMessageStore.getState().addMessage(chatId, created);
-          if (!didFallback) {
-            didFallback = true;
-            setToast('Сокет недоступен — вложение отправлено через HTTP');
-          }
         }
       }
 
@@ -668,11 +1108,7 @@ export default function ChatView() {
       // Для private-диалогов оставляем логику «личного» обсуждения с ботом
       if (currentChat.type === 'PRIVATE') {
         const botChat = await createChat('PRIVATE', [botId]);
-        const base =
-          message.content?.trim() ||
-          (message.mediaUrl ? '[attachment]' : '[message]');
-        const topicText = `Обсуждение темы:\n${base}\n\nИсточник: ${message.sender.displayName}`;
-        await sendMessage(botChat.id, topicText);
+        setDiscussionLink(user.id, chatId, message.id, botChat.id);
         setShowMessageMenu(null);
         navigate(`/chat/${botChat.id}`);
         return;
@@ -696,19 +1132,23 @@ export default function ChatView() {
 
       const title = `Обсуждение: ${message.sender.displayName}`;
       const discussionChat = await createChat(discussionType, [...participants], title);
-
-      const base =
-        message.content?.trim() ||
-        (message.mediaUrl ? '[attachment]' : '[message]');
-      const topicText = `Обсуждение темы:\n${base}\n\nИсточник: ${message.sender.displayName}`;
-
-      await sendMessage(discussionChat.id, topicText);
+      setDiscussionLink(user.id, chatId, message.id, discussionChat.id);
       setShowMessageMenu(null);
       navigate(`/chat/${discussionChat.id}`);
     } catch (e) {
       console.error('Discuss message error:', e);
       setToast('Не удалось открыть обсуждение');
     }
+  };
+
+  const openMessageMenu = (e: { clientY?: number } & { preventDefault: () => void } & { stopPropagation: () => void }, m: Message) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const y = typeof e.clientY === 'number' ? e.clientY : window.innerHeight / 2;
+    // If the menu would likely overlap the composer (bottom area), flip it above the message.
+    const above = y > window.innerHeight - 240;
+    setMessageMenuPlacement(above ? 'above' : 'below');
+    setShowMessageMenu(m);
   };
 
   const handleDeleteChat = async () => {
@@ -826,16 +1266,110 @@ export default function ChatView() {
         </div>
       )}
 
+      {callUi && (
+        <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-background-light border border-background-medium rounded-xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-background-medium/70">
+              <div className="text-sm font-semibold text-text-primary">
+                {callUi.phase === 'incoming'
+                  ? 'Incoming call'
+                  : callUi.mode === 'video'
+                    ? 'Video call'
+                    : 'Voice call'}
+              </div>
+              <button
+                type="button"
+                className="p-2 hover:bg-background-light rounded-full transition-colors"
+                aria-label="Close call"
+                onClick={() => {
+                  if (callUi.phase === 'incoming') rejectIncomingCall();
+                  else endCall();
+                }}
+              >
+                <X className="w-5 h-5 text-text-secondary" />
+              </button>
+            </div>
+
+            <div className="relative px-4 py-4">
+              <div className="grid grid-cols-1 gap-3">
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  className="w-full h-56 bg-black rounded-lg object-cover"
+                />
+                <div className="flex justify-end">
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className={`w-28 h-20 bg-black rounded-lg object-cover ${callUi.mode === 'audio' ? 'opacity-70' : ''}`}
+                  />
+                </div>
+              </div>
+
+              {callUi.phase === 'waking' && (
+                <div className="absolute inset-0 bg-background-light/40 backdrop-blur-sm flex items-center justify-center">
+                  <CallSlapWaking />
+                </div>
+              )}
+            </div>
+
+            <div className="px-4 py-3 border-t border-background-medium/70 flex items-center gap-2">
+              {callUi.phase === 'incoming' ? (
+                <>
+                  <button
+                    type="button"
+                    className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:opacity-95 transition-opacity"
+                    onClick={() => void acceptIncomingCall()}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    className="flex-1 px-4 py-2 bg-background-light border border-background-medium rounded-lg hover:bg-background-medium transition-colors"
+                    onClick={rejectIncomingCall}
+                  >
+                    Reject
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:opacity-95 transition-opacity"
+                  onClick={endCall}
+                >
+                  End
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3 p-4 bg-background-medium border-b border-background-light shrink-0">
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="md:hidden p-2 hover:bg-background-light rounded-full transition-colors"
-          aria-label="Back to chats"
-        >
-          <ArrowLeft className="w-5 h-5 text-text-secondary" />
-        </button>
+        {parentDiscussion?.parentChatId ? (
+          <button
+            type="button"
+            onClick={() => navigate(`/chat/${parentDiscussion.parentChatId}`)}
+            className="p-2 hover:bg-background-light rounded-full transition-colors"
+            aria-label="Back to parent chat"
+            title="Back"
+          >
+            <ArrowLeft className="w-5 h-5 text-text-secondary" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="md:hidden p-2 hover:bg-background-light rounded-full transition-colors"
+            aria-label="Back to chats"
+          >
+            <ArrowLeft className="w-5 h-5 text-text-secondary" />
+          </button>
+        )}
 
         <div className="relative shrink-0 w-10 h-10">
           {mediaUrl(info.avatar) && !peerHeaderAvatarFailed ? (
@@ -890,24 +1424,30 @@ export default function ChatView() {
           >
             <Search className="w-5 h-5 text-text-secondary" />
           </button>
-          <button
-            type="button"
-            onClick={() => setToast('Voice calls will be available in a future update')}
-            className="p-2 hover:bg-background-light rounded-full transition-colors hidden sm:block"
-            aria-label="Voice call"
-            title="Voice call"
-          >
-            <Phone className="w-5 h-5 text-text-secondary" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setToast('Video calls will be available in a future update')}
-            className="p-2 hover:bg-background-light rounded-full transition-colors hidden sm:block"
-            aria-label="Video call"
-            title="Video call"
-          >
-            <Video className="w-5 h-5 text-text-secondary" />
-          </button>
+          {currentChat?.type === 'PRIVATE' && (
+            <>
+              <button
+                type="button"
+                onClick={() => void startCallerCall('audio')}
+                disabled={Boolean(callUi) || !socket.connected && !accessToken}
+                className="p-2 hover:bg-background-light rounded-full transition-colors disabled:opacity-50 hidden sm:block"
+                aria-label="Voice call"
+                title="Voice call"
+              >
+                <Phone className="w-5 h-5 text-text-secondary" />
+              </button>
+              <button
+                type="button"
+                onClick={() => void startCallerCall('video')}
+                disabled={Boolean(callUi) || !socket.connected && !accessToken}
+                className="p-2 hover:bg-background-light rounded-full transition-colors disabled:opacity-50 hidden sm:block"
+                aria-label="Video call"
+                title="Video call"
+              >
+                <Video className="w-5 h-5 text-text-secondary" />
+              </button>
+            </>
+          )}
           <div className="relative">
             <button
               type="button"
@@ -1205,6 +1745,8 @@ export default function ChatView() {
             <div className="space-y-2">
               {group.messages.map((message, msgIndex) => {
                 const isOutgoing = message.senderId === user?.id;
+                const reactionEmoji = user?.id ? getReaction(user.id, message.id) : null;
+                const discussionLinked = Boolean(user?.id && chatId && getDiscussionLink(user.id, chatId, message.id));
                 const receipt =
                   isOutgoing && user ? getOutgoingReceipt(message, user.id) : null;
                 const showAvatar =
@@ -1222,7 +1764,7 @@ export default function ChatView() {
                     onContextMenu={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setShowMessageMenu(message);
+                      openMessageMenu(e, message);
                     }}
                   >
                     <div
@@ -1268,6 +1810,7 @@ export default function ChatView() {
                               : 'bg-chat-incoming rounded-bl-md'
                           } ${
                             pinnedMessage?.messageId === message.id ? 'ring-2 ring-primary/60' : ''
+                          } ${discussionLinked ? 'ring-2 ring-[#FF2B5E]/60' : ''}
                           }`}
                         >
                           {message.replyTo && (
@@ -1324,6 +1867,11 @@ export default function ChatView() {
                                 >
                                   {message.content}
                                 </p>
+                              )}
+                              {reactionEmoji && (
+                                <div className={`mt-2 ${isOutgoing ? 'flex justify-end' : 'flex justify-start'}`}>
+                                  <span className="text-lg leading-none">{reactionEmoji}</span>
+                                </div>
                               )}
                             </>
                           )}
@@ -1388,7 +1936,7 @@ export default function ChatView() {
                             )}
                             <button
                               type="button"
-                              onClick={() => setShowMessageMenu(message)}
+                              onClick={(e) => openMessageMenu(e, message)}
                               className="p-1.5 hover:bg-background-light rounded-full transition-colors shrink-0"
                               aria-label="Действия с сообщением"
                             >
@@ -1404,9 +1952,9 @@ export default function ChatView() {
                                 aria-hidden
                               />
                               <div
-                                className={`absolute top-full mt-1 min-w-[11rem] bg-background-light rounded-lg shadow-xl z-30 py-1 animate-scale-in ${
+                                className={`absolute min-w-[11rem] bg-background-light rounded-lg shadow-xl z-30 py-1 animate-scale-in ${
                                   isOutgoing ? 'right-0' : 'left-0'
-                                }`}
+                                } ${messageMenuPlacement === 'below' ? 'top-full mt-1' : 'bottom-full mb-1 top-auto'}`}
                               >
                               {!message.isDeleted && (
                                 <button
@@ -1429,6 +1977,27 @@ export default function ChatView() {
                                   <span className="text-base leading-none">💬</span>
                                   {t('message.discuss')}
                                 </button>
+                              )}
+                              {!message.isDeleted && user?.id && (
+                                <div className="px-3 py-2">
+                                  <div className="text-xs text-text-secondary mb-1">React</div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {REACTION_EMOJIS.map((emoji) => (
+                                      <button
+                                        key={emoji}
+                                        type="button"
+                                        className="w-8 h-8 rounded-full bg-background-light hover:bg-background-medium flex items-center justify-center transition-colors"
+                                        onClick={() => {
+                                          setReaction(user.id, message.id, emoji);
+                                          setReactionVersion((n) => n + 1);
+                                          setShowMessageMenu(null);
+                                        }}
+                                      >
+                                        <span className="text-lg leading-none">{emoji}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
                               )}
                               {!message.isDeleted && (
                                 <button

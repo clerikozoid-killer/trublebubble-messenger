@@ -22,7 +22,7 @@ class ApiService {
     this.refreshToken = null;
   }
 
-  private async refreshAccessToken(): Promise<string | null> {
+  async refreshAccessToken(): Promise<string | null> {
     if (!this.refreshToken) return null;
 
     try {
@@ -45,6 +45,21 @@ class ApiService {
       console.error('Refresh token error:', error);
       this.clearTokens();
       return null;
+    }
+  }
+
+  /** Render free часто "засыпает"; /health — самый дешёвый способ разбудить backend перед сигналингом. */
+  async wakeBackend(): Promise<void> {
+    const url = `${API_BASE_URL}/health`;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 30000);
+    try {
+      const r = await fetch(url, { method: 'GET', cache: 'no-store', signal: controller.signal });
+      if (!r.ok) {
+        throw new Error(`Wake failed: ${r.status}`);
+      }
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   }
 
