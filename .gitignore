@@ -1,11 +1,14 @@
 # Dependencies
 node_modules/
+**/node_modules/
 .pnp
 .pnp.js
 
 # Build
 dist/
 build/
+**/dist/
+**/build/
 
 # Environment
 .env
@@ -13,6 +16,9 @@ build/
 .env.development.local
 .env.test.local
 .env.production.local
+**/.env
+**/.env.*
+!**/.env.example
 
 # IDE
 .idea/
@@ -46,6 +52,7 @@ backend/uploads/
 
 # Local backup zips (uploads); copy between PCs / keep outside git
 backups/
+tmp/
 
 # Cache
 .cache/

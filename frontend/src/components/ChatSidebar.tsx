@@ -72,8 +72,10 @@ export default function ChatSidebar() {
   const bumpPins = () => setPinVersion((n) => n + 1);
 
   useEffect(() => {
-    fetchChats();
-  }, [fetchChats]);
+    // fetchChats uses Authorization header; ensure tokens are ready.
+    if (!user?.id) return;
+    void fetchChats();
+  }, [user?.id, fetchChats]);
 
   useEffect(() => {
     if (toast) {

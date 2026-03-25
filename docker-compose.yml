@@ -16,6 +16,12 @@ services:
       # Browser may use localhost or 127.0.0.1 — both must be allowed for CORS / Socket.io
       - FRONTEND_URL=http://localhost:5173
       - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:5175,http://127.0.0.1:5175
+      # 1 = разрешить https://*.trycloudflare.com (см. сервис cloudflared с профилем tunnel)
+      - CORS_ALLOW_TRY_CLOUDFLARE=${CORS_ALLOW_TRY_CLOUDFLARE:-0}
+      # 1 = разрешить https://*.ngrok-free.app / https://*.ngrok.app (см. сервис ngrok с профилем tunnel-ngrok)
+      - CORS_ALLOW_NGROK=${CORS_ALLOW_NGROK:-0}
+      # 1 = разрешить https://*.loca.lt / https://*.localtunnel.me (см. сервис localtunnel с профилем tunnel-lt)
+      - CORS_ALLOW_LOCALTUNNEL=${CORS_ALLOW_LOCALTUNNEL:-0}
       - BUBBLE_BOT_PROMPT_PATH=/app/bubble-bot-prompt.txt
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
@@ -41,6 +47,64 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    networks:
+      - messenger-network
+
+  # Quick tunnel: публичный https://*.trycloudflare.com → контейнер frontend:80
+  # Запуск: docker compose --profile tunnel up -d
+  # В корне репозитория в .env задайте: CORS_ALLOW_TRY_CLOUDFLARE=1 (и перезапустите backend)
+  # URL смотрите: docker compose logs cloudflared
+  # protocol http2: стабильнее в сетях, где UDP/QUIC режется (иначе timeout: no recent network activity)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles:
+      - tunnel
+    command: tunnel --no-autoupdate --protocol http2 --edge-ip-version 4 --url http://frontend:80
+    depends_on:
+      - frontend
+    restart: unless-stopped
+    networks:
+      - messenger-network
+
+  # ngrok tunnel: публичный https://*.ngrok-free.app → контейнер frontend:80
+  # В корне репозитория в .env задайте:
+  #   CORS_ALLOW_NGROK=1
+  #   NGROK_AUTHTOKEN=<ваш токен из ngrok dashboard>
+  # Запуск: docker compose --profile tunnel-ngrok up -d
+  # URL смотрите: docker compose logs ngrok
+  ngrok:
+    image: ngrok/ngrok:latest
+    profiles:
+      - tunnel-ngrok
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+    command: http frontend:80 --log=stdout
+    depends_on:
+      - frontend
+    restart: unless-stopped
+    networks:
+      - messenger-network
+
+  # localtunnel: публичный https://*.loca.lt → контейнер frontend:80
+  # В корне репозитория в .env задайте: CORS_ALLOW_LOCALTUNNEL=1
+  # Запуск: docker compose --profile tunnel-lt up -d
+  # URL смотрите: docker compose logs localtunnel
+  localtunnel:
+    image: node:20-alpine
+    profiles:
+      - tunnel-lt
+    command: sh -lc "mkdir -p /state && npm -g --silent install localtunnel && lt --host https://loca.lt --port 80 --local-host frontend 2>&1 | awk '{ print; if ($$0 ~ /your url is:/) { print $$NF > \"/state/localtunnel.url\"; fflush(\"/state/localtunnel.url\") } }'"
+    depends_on:
+      - frontend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /state/localtunnel.url"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    volumes:
+      - ./tmp:/state
     networks:
       - messenger-network
 

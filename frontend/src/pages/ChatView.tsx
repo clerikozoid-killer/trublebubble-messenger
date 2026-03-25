@@ -47,6 +47,7 @@ import { setChatMute, isChatMuted, muteLabel } from '../utils/chatMute';
 import { useChatThemeStore, CHAT_THEME_PRESETS, type ChatThemeId } from '../stores/chatThemeStore';
 import { parseActiveMention } from '../utils/mentionParse';
 import { addSavedMessage } from '../utils/savedMessages';
+import { getPinnedMessage, togglePinnedMessage, clearPinnedMessage } from '../utils/pinnedMessages';
 
 function memberLabel(count: number) {
   return `${count} ${count === 1 ? 'member' : 'members'}`;
@@ -60,8 +61,8 @@ export default function ChatView() {
   const { chatId } = useParams<{ chatId: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { currentChat, fetchChat, markChatAsRead, removeChat, updateChat } = useChatStore();
-  const { messages, fetchMessages, editMessage, deleteMessage, clearChatMessages } = useMessageStore();
+  const { currentChat, fetchChat, markChatAsRead, removeChat, updateChat, createChat } = useChatStore();
+  const { messages, fetchMessages, editMessage, deleteMessage, clearChatMessages, sendMessage } = useMessageStore();
 
   const [messageInput, setMessageInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -80,6 +81,12 @@ export default function ChatView() {
   const [menuPanel, setMenuPanel] = useState<'main' | 'mute'>('main');
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [muteTick, setMuteTick] = useState(0);
+  const [pinVersion, setPinVersion] = useState(0);
+  const pinnedMessage = useMemo(() => {
+    if (!user?.id || !chatId) return null;
+    return getPinnedMessage(user.id, chatId);
+  }, [user?.id, chatId, pinVersion]);
+  const BUBBLE_BOT_USERNAME = 'bubble_bot';
   const chatThemeId = useChatThemeStore((s) => (chatId ? s.getChatTheme(chatId) : 'default'));
   const setChatTheme = useChatThemeStore((s) => s.setChatTheme);
   const [uploadBusy, setUploadBusy] = useState(false);
@@ -594,6 +601,43 @@ export default function ChatView() {
     setToast('Сохранено в избранное');
   };
 
+  const handleTogglePinMessage = (message: Message) => {
+    if (!user) return;
+    if (message.isDeleted) return;
+    const pinnedNow = togglePinnedMessage(user.id, message);
+    setPinVersion((n) => n + 1);
+    setShowMessageMenu(null);
+    setToast(pinnedNow ? 'Сообщение закреплено' : 'Сообщение откреплено');
+  };
+
+  const handleDiscussMessage = async (message: Message) => {
+    if (!user) return;
+    if (message.isDeleted) return;
+
+    try {
+      const q = BUBBLE_BOT_USERNAME;
+      const users = await api.searchUsers(q);
+      const bot = users.find((u) => (u.username || '').toLowerCase() === q.toLowerCase());
+      if (!bot?.id) {
+        setToast('bubble_bot не найден');
+        return;
+      }
+
+      const botChat = await createChat('PRIVATE', [bot.id]);
+      const base =
+        message.content?.trim() ||
+        (message.mediaUrl ? '[attachment]' : '[message]');
+      const topicText = `Обсуждение темы:\n${base}\n\nИсточник: ${message.sender.displayName}`;
+
+      await sendMessage(botChat.id, topicText);
+      setShowMessageMenu(null);
+      navigate(`/chat/${botChat.id}`);
+    } catch (e) {
+      console.error('Discuss message error:', e);
+      setToast('Не удалось открыть обсуждение');
+    }
+  };
+
   const handleDeleteChat = async () => {
     if (!chatId || !currentChat) return;
     if (!window.confirm('Delete this chat for everyone? This cannot be undone.')) return;
@@ -1038,6 +1082,41 @@ export default function ChatView() {
             : undefined
         }
       >
+        {pinnedMessage && (
+          <div className="flex items-center gap-3 bg-background-medium/80 border border-background-light/50 rounded-2xl px-3 py-2">
+            <div className="shrink-0 w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
+              📌
+            </div>
+            <button
+              type="button"
+              className="flex-1 min-w-0 text-left"
+              onClick={() => {
+                const el = document.getElementById(`message-${pinnedMessage.messageId}`);
+                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }}
+            >
+              <p className="text-xs text-text-secondary truncate">
+                Закреплено · {pinnedMessage.senderDisplayName}
+              </p>
+              <p className="text-sm text-text-primary truncate">
+                {pinnedMessage.content?.trim() ||
+                  (pinnedMessage.mediaUrl ? '[attachment]' : 'Сообщение')}
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!user?.id || !chatId) return;
+                clearPinnedMessage(user.id, chatId);
+                setPinVersion((n) => n + 1);
+                setToast('Сообщение откреплено');
+              }}
+              className="px-3 py-2 rounded-xl bg-background-light hover:bg-background-medium text-sm text-text-primary transition-colors shrink-0"
+            >
+              Открепить
+            </button>
+          </div>
+        )}
         {messageGroups.map((group) => (
           <div key={group.date}>
             <div className="flex items-center justify-center my-4">
@@ -1063,7 +1142,16 @@ export default function ChatView() {
                 const metaOutgoing = 'text-white/90';
 
                 return (
-                  <div key={message.id} className="group">
+                  <div
+                    key={message.id}
+                    id={`message-${message.id}`}
+                    className="group"
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowMessageMenu(message);
+                    }}
+                  >
                     <div
                       className={`flex gap-2 ${isOutgoing ? 'justify-end' : 'justify-start items-end'} ${
                         showAvatar ? 'mt-4' : ''
@@ -1105,6 +1193,8 @@ export default function ChatView() {
                             isOutgoing
                               ? 'bg-chat-outgoing rounded-br-md'
                               : 'bg-chat-incoming rounded-bl-md'
+                          } ${
+                            pinnedMessage?.messageId === message.id ? 'ring-2 ring-primary/60' : ''
                           }`}
                         >
                           {message.replyTo && (
@@ -1197,7 +1287,13 @@ export default function ChatView() {
                         </div>
                       </div>
 
-                        <div className="relative flex shrink-0 items-center self-end pb-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                        <div
+                          className={`relative flex shrink-0 items-center self-end pb-1 transition-opacity ${
+                            showMessageMenu?.id === message.id
+                              ? 'opacity-100'
+                              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                          }`}
+                        >
                           <div className="flex flex-row items-center gap-0.5">
                             <button
                               type="button"
@@ -1247,6 +1343,28 @@ export default function ChatView() {
                                 >
                                   <Bookmark className="w-4 h-4" />
                                   В избранное
+                                </button>
+                              )}
+                              {!message.isDeleted && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void handleDiscussMessage(message);
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
+                                >
+                                  <span className="text-base leading-none">💬</span>
+                                  Обсудить
+                                </button>
+                              )}
+                              {!message.isDeleted && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePinMessage(message)}
+                                  className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
+                                >
+                                  <MapPin className="w-4 h-4" />
+                                  {pinnedMessage?.messageId === message.id ? 'Открепить' : 'Закрепить'}
                                 </button>
                               )}
                               {isOutgoing && (

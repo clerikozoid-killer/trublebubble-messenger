@@ -1,6 +1,11 @@
 /**
- * Random incoming-message sound: "Эй!" (speech) | synthetic shot | synthetic "hurt".
- * Browsers may block audio until user gesture — call unlockNotificationAudio() on first interaction.
+ * Random incoming-message sound:
+ * - "Эй!" (speech) OR real audio from /public/sounds
+ * - "выстрел" (noise) OR real audio
+ * - "попадание" ("АААГГГРРРХХХ") OR real audio
+ *
+ * Browsers may block audio until user gesture — call unlockNotificationAudio() on first interaction
+ * (we do this after user enables sounds via UI and on generic pointer/click events).
  */
 
 let ctx: AudioContext | null = null;
@@ -22,7 +27,7 @@ export function unlockNotificationAudio(): void {
   }
 }
 
-function playNoiseBurst(durationMs: number, gain: number): void {
+function playNoiseBurst(durationMs: number, gain: number, volume: number): void {
   const c = getCtx();
   const bufferSize = c.sampleRate * (durationMs / 1000);
   const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
@@ -33,21 +38,26 @@ function playNoiseBurst(durationMs: number, gain: number): void {
   const src = c.createBufferSource();
   src.buffer = buffer;
   const g = c.createGain();
-  g.gain.setValueAtTime(0.35, c.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.01, c.currentTime + durationMs / 1000);
+  g.gain.setValueAtTime(0.35 * volume, c.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.01 * volume, c.currentTime + durationMs / 1000);
   src.connect(g);
   g.connect(c.destination);
   src.start();
 }
 
-function playTone(freq: number, durationMs: number, type: OscillatorType = 'sine'): void {
+function playTone(
+  freq: number,
+  durationMs: number,
+  type: OscillatorType = 'sine',
+  volume: number
+): void {
   const c = getCtx();
   const osc = c.createOscillator();
   const g = c.createGain();
   osc.type = type;
   osc.frequency.setValueAtTime(freq, c.currentTime);
-  g.gain.setValueAtTime(0.12, c.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.01, c.currentTime + durationMs / 1000);
+  g.gain.setValueAtTime(0.12 * volume, c.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.01 * volume, c.currentTime + durationMs / 1000);
   osc.connect(g);
   g.connect(c.destination);
   osc.start();
@@ -55,14 +65,14 @@ function playTone(freq: number, durationMs: number, type: OscillatorType = 'sine
 }
 
 /** «Эй!» — короткая речь или два тона. */
-function playHey(): void {
+function playHey(volume: number): void {
   if (typeof window !== 'undefined' && window.speechSynthesis) {
     try {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance('Эй!');
       u.lang = 'ru-RU';
       u.rate = 1.35;
-      u.volume = 1;
+      u.volume = Math.max(0, Math.min(1, volume));
       u.pitch = 1.1;
       window.speechSynthesis.speak(u);
       return;
@@ -70,40 +80,100 @@ function playHey(): void {
       /* fall through */
     }
   }
-  playTone(880, 80, 'square');
-  setTimeout(() => playTone(660, 100, 'square'), 70);
+  playTone(880, 80, 'square', volume);
+  setTimeout(() => playTone(660, 100, 'square', volume), 70);
 }
 
 /** Выстрел — шумовой импульс. */
-function playShot(): void {
-  playNoiseBurst(90, 1);
-  playTone(180, 40, 'sawtooth');
+function playShot(volume: number): void {
+  playNoiseBurst(90, 1, volume);
+  playTone(180, 40, 'sawtooth', volume);
 }
 
 /** «А-а-а» — низкий свип + шум. */
-function playHit(): void {
+function playHit(volume: number): void {
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance('АААГГГРРРХХХ');
+      u.lang = 'ru-RU';
+      u.rate = 0.95;
+      u.volume = Math.max(0, Math.min(1, volume));
+      u.pitch = 0.85;
+      window.speechSynthesis.speak(u);
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+
   const c = getCtx();
   const osc = c.createOscillator();
   const g = c.createGain();
   osc.type = 'sawtooth';
   osc.frequency.setValueAtTime(220, c.currentTime);
   osc.frequency.exponentialRampToValueAtTime(90, c.currentTime + 0.35);
-  g.gain.setValueAtTime(0.2, c.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.01, c.currentTime + 0.4);
+  g.gain.setValueAtTime(0.2 * volume, c.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.01 * volume, c.currentTime + 0.4);
   osc.connect(g);
   g.connect(c.destination);
   osc.start();
   osc.stop(c.currentTime + 0.45);
-  setTimeout(() => playNoiseBurst(200, 0.45), 0);
+  setTimeout(() => playNoiseBurst(200, 0.45, volume), 0);
 }
 
-export function playIncomingMessageSound(): void {
+type SoundKind = 'hey' | 'shot' | 'hit';
+
+// Optional: real audio files. Put your own files into `frontend/public/sounds/`.
+// Expected names (any of these can exist):
+// - hey.mp3 / hey.wav
+// - shot.mp3 / shot.wav
+// - hit.mp3 / hit.wav
+const SOUND_AUDIO_CANDIDATES: Record<SoundKind, string[]> = {
+  hey: ['/sounds/hey.mp3', '/sounds/hey.wav'],
+  shot: ['/sounds/shot.mp3', '/sounds/shot.wav'],
+  hit: ['/sounds/hit.mp3', '/sounds/hit.wav'],
+};
+
+async function tryPlayAudioFile(src: string, volume: number): Promise<boolean> {
   try {
+    const a = new Audio(src);
+    a.volume = Math.max(0, Math.min(1, volume));
+    // If file is missing (404), play() often rejects; we catch and return false.
+    await a.play();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function kindRandom(): SoundKind {
+  const r = Math.floor(Math.random() * 3);
+  if (r === 0) return 'hey';
+  if (r === 1) return 'shot';
+  return 'hit';
+}
+
+export async function playIncomingMessageSound(volume: number = 0.9): Promise<void> {
+  try {
+    const v = Math.max(0, Math.min(1, volume));
     unlockNotificationAudio();
-    const r = Math.floor(Math.random() * 3);
-    if (r === 0) playHey();
-    else if (r === 1) playShot();
-    else playHit();
+
+    const kind = kindRandom();
+    const candidates = SOUND_AUDIO_CANDIDATES[kind];
+    let playedFromAudio = false;
+    for (const src of candidates) {
+      if (await tryPlayAudioFile(src, v)) {
+        playedFromAudio = true;
+        break;
+      }
+    }
+
+    if (!playedFromAudio) {
+      if (kind === 'hey') playHey(v);
+      else if (kind === 'shot') playShot(v);
+      else playHit(v);
+    }
   } catch (e) {
     console.warn('Notification sound failed:', e);
   }

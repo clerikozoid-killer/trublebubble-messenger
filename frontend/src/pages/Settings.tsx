@@ -21,6 +21,8 @@ import {
 import type { User as UserType } from '../types';
 import { mediaUrl } from '../utils/mediaUrl';
 import { useAppearanceStore } from '../stores/appearanceStore';
+import { useSoundSettingsStore } from '../stores/soundSettingsStore';
+import { playIncomingMessageSound, unlockNotificationAudio } from '../utils/messageNotificationSound';
 
 const profileFormClass =
   'w-full max-w-md mx-auto px-4 py-6 space-y-5';
@@ -52,6 +54,11 @@ export default function Settings() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const soundEnabled = useSoundSettingsStore((s) => s.enabled);
+  const soundVolume = useSoundSettingsStore((s) => s.volume);
+  const setSoundEnabled = useSoundSettingsStore((s) => s.setEnabled);
+  const setSoundVolume = useSoundSettingsStore((s) => s.setVolume);
 
   useEffect(() => {
     if (!user) return;
@@ -397,7 +404,75 @@ export default function Settings() {
               {activeTab === 'notifications' && 'Notifications'}
               {activeTab === 'language' && 'Language'}
             </h2>
-            <p className="text-sm text-text-secondary">No extra options here yet.</p>
+            {activeTab === 'notifications' ? (
+              <div className="space-y-4">
+                <h3 className="text-base font-semibold text-text-primary">Sounds</h3>
+                <p className="text-sm text-text-secondary">
+                  Проигрывать случайные звуки при входящих сообщениях (выстрел / попадание / «Эй!»).
+                </p>
+
+                <div className="flex items-center justify-between gap-4 bg-background-medium p-4 rounded-xl border border-background-light/50">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Включить звуки</p>
+                    <p className="text-xs text-text-secondary mt-1">Можно отключить в любой момент.</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={soundEnabled}
+                    onClick={() => {
+                      const next = !soundEnabled;
+                      setSoundEnabled(next);
+                      if (next) unlockNotificationAudio();
+                    }}
+                    className={
+                      soundEnabled
+                        ? 'inline-flex h-8 w-14 items-center rounded-full bg-tg-link justify-end px-1 transition-colors'
+                        : 'inline-flex h-8 w-14 items-center rounded-full bg-background-light justify-start px-1 transition-colors'
+                    }
+                  >
+                    <span className="h-6 w-6 rounded-full bg-white shadow shrink-0" />
+                  </button>
+                </div>
+
+                <div className="bg-background-medium p-4 rounded-xl border border-background-light/50 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-text-primary">Громкость</p>
+                    <p className="text-xs text-text-secondary">{Math.round(soundVolume * 100)}%</p>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={soundVolume}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setSoundVolume(v);
+                    }}
+                    className="w-full accent-primary"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        unlockNotificationAudio();
+                        void playIncomingMessageSound(soundVolume);
+                      }}
+                      className="px-4 py-2 rounded-lg bg-primary text-white text-sm hover:bg-primary-dark transition-colors"
+                    >
+                      Test sound
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-xs text-text-secondary">
+                  Совет: скачай MP3/WAV (например из разделов «пули»), положи в <span className="font-mono">frontend/public/sounds</span> как <span className="font-mono">hey.mp3</span>, <span className="font-mono">shot.mp3</span>, <span className="font-mono">hit.mp3</span>.
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-text-secondary">No extra options here yet.</p>
+            )}
           </div>
         ) : null}
       </div>

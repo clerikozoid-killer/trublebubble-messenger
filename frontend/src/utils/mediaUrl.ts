@@ -5,6 +5,7 @@
  */
 export function mediaUrl(path: string | null | undefined): string | undefined {
   if (path == null || path === '') return undefined;
+  if (path.startsWith('data:')) return path;
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
   // Same host as API/WebSocket (Netlify UI often sets both; fallback avoids broken /uploads on netlify.app)
   const base = (
@@ -12,7 +13,10 @@ export function mediaUrl(path: string | null | undefined): string | undefined {
     import.meta.env.VITE_WS_URL ||
     ''
   ).replace(/\/$/, '');
+  const normalizedBase = base
+    .replace(/^ws:\/\//i, 'http://')
+    .replace(/^wss:\/\//i, 'https://');
   const p = path.startsWith('/') ? path : `/${path}`;
-  if (base) return `${base}${p}`;
+  if (normalizedBase) return `${normalizedBase}${p}`;
   return p;
 }

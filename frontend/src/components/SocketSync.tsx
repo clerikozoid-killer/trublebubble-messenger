@@ -10,6 +10,7 @@ import {
   playIncomingMessageSound,
   unlockNotificationAudio,
 } from '../utils/messageNotificationSound';
+import { useSoundSettingsStore } from '../stores/soundSettingsStore';
 
 /**
  * Global socket listeners: receipts, cleared chats, incoming message (sidebar + sound).
@@ -22,8 +23,36 @@ export default function SocketSync() {
   useEffect(() => {
     const unlock = () => unlockNotificationAudio();
     document.addEventListener('pointerdown', unlock, { once: true });
-    return () => document.removeEventListener('pointerdown', unlock);
+    document.addEventListener('click', unlock, { once: true });
+    document.addEventListener('touchstart', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      document.removeEventListener('pointerdown', unlock);
+      document.removeEventListener('click', unlock);
+      document.removeEventListener('touchstart', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
   }, []);
+
+  /** ПК/браузер часто рвёт сокет во вкладке в фоне или после сна; телефон держит соединение лучше. */
+  useEffect(() => {
+    if (!user) return;
+    const reconnect = () => {
+      const token = useAuthStore.getState().accessToken;
+      if (!token || socket.connected) return;
+      socket.connect(token);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') reconnect();
+    };
+    const onOnline = () => reconnect();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onOnline);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -39,7 +68,10 @@ export default function SocketSync() {
 
     const onNewMessage = (message: Message) => {
       if (message.senderId === user.id) return;
-      playIncomingMessageSound();
+      const enabled = useSoundSettingsStore.getState().enabled;
+      const volume = useSoundSettingsStore.getState().volume;
+      if (!enabled) return;
+      void playIncomingMessageSound(volume);
       useChatStore.getState().applyIncomingMessage(message, user.id, activeChatId);
     };
 

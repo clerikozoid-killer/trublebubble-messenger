@@ -15,18 +15,18 @@ import { bootstrapBubbleBot } from './bootstrapBubbleBot.js';
 import { errorMiddleware } from './middleware/error.middleware.js';
 import { setupSocketHandlers } from './sockets/index.js';
 import { registerIoServer } from './ioServer.js';
-import { resolveCorsOrigins } from './utils/corsOrigins.js';
+import { resolveCorsOrigin } from './utils/corsOrigins.js';
 
 dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
 
-const corsOrigins = resolveCorsOrigins();
+const corsOrigin = resolveCorsOrigin();
 
 export const io = new Server(httpServer, {
   cors: {
-    origin: corsOrigins,
+    origin: corsOrigin,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -37,7 +37,7 @@ registerIoServer(io);
 // Middleware
 app.use(
   cors({
-    origin: corsOrigins,
+    origin: corsOrigin,
     credentials: true,
   })
 );
