@@ -22,6 +22,201 @@ function stripUsernameMention(text: string, username: string): string {
   return cleaned || text.trim();
 }
 
+function normalizeForContext(content: string, contentType: string): string {
+  const t = (content || '').trim();
+  if (!t) return '';
+  if (t.startsWith('{')) {
+    // Hide internal stubs like {"kind":"poll","pollId":"..."}
+    try {
+      const parsed = JSON.parse(t) as { kind?: unknown };
+      if (parsed?.kind === 'poll') return '[Опрос]';
+      if (parsed?.kind === 'location') return '[Геолокация]';
+    } catch {
+      // ignore
+    }
+  }
+  if (contentType && contentType !== 'TEXT') {
+    return `[${contentType}] ${t}`.trim();
+  }
+  return t;
+}
+
+async function buildChatContext(
+  chatId: string,
+  botId: string,
+  anchorMessageId?: string,
+  maxMessages = 18
+): Promise<string> {
+  if (!anchorMessageId) {
+    // Fallback: last messages (excluding empty stubs).
+    const msgs = await prisma.message.findMany({
+      where: { chatId },
+      orderBy: { createdAt: 'desc' },
+      take: maxMessages,
+      select: {
+        id: true,
+        content: true,
+        contentType: true,
+        sender: { select: { username: true, displayName: true } },
+      },
+    });
+    return msgs
+      .reverse()
+      .map((m) => {
+        const who = m.sender?.displayName || m.sender?.username || 'user';
+        const text = normalizeForContext(m.content ?? '', m.contentType ?? 'TEXT');
+        if (!text) return null;
+        return `${who}: ${text}`;
+      })
+      .filter((x): x is string => Boolean(x))
+      .join('\n');
+  }
+
+  const anchor = await prisma.message.findUnique({
+    where: { id: anchorMessageId },
+    select: {
+      id: true,
+      createdAt: true,
+      replyToId: true,
+      content: true,
+      contentType: true,
+      sender: { select: { username: true, displayName: true } },
+    },
+  });
+  if (!anchor) return '';
+
+  const lastBotBeforeAnchor = await prisma.message.findFirst({
+    where: {
+      chatId,
+      senderId: botId,
+      createdAt: { lt: anchor.createdAt },
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, createdAt: true },
+  });
+
+  // 1) Prefer "reply chain" branch: follow replyToId links until we hit last bot message.
+  const visited = new Set<string>();
+  const chain: Array<{
+    id: string;
+    senderDisplay: string;
+    content: string | null;
+    contentType: string;
+  }> = [];
+
+  let curId: string | null = anchorMessageId;
+  let steps = 0;
+  while (curId && steps < 12 && !visited.has(curId)) {
+    visited.add(curId);
+    const msg = (await prisma.message.findUnique({
+      where: { id: curId },
+      select: {
+        id: true,
+        replyToId: true,
+        content: true,
+        contentType: true,
+        sender: { select: { username: true, displayName: true } },
+      },
+    })) as
+      | {
+          id: string;
+          replyToId: string | null;
+          content: string | null;
+          contentType: string;
+          sender: { username: string | null; displayName: string | null } | null;
+        }
+      | null;
+    if (!msg) break;
+
+    chain.push({
+      id: msg.id,
+      senderDisplay: msg.sender?.displayName || msg.sender?.username || 'user',
+      content: msg.content ?? null,
+      contentType: msg.contentType ?? 'TEXT',
+    });
+
+    if (lastBotBeforeAnchor && msg.id === lastBotBeforeAnchor.id) break;
+    curId = msg.replyToId;
+    steps++;
+  }
+
+  const chainIds = new Set(chain.map((c) => c.id));
+  const reachedLastBot = lastBotBeforeAnchor ? chainIds.has(lastBotBeforeAnchor.id) : false;
+
+  // context must exclude the anchor itself (it is provided separately as "Текущее сообщение пользователя")
+  const makeLines = (msgs: typeof chain) =>
+    msgs
+      .filter((lineMsg) => lineMsg.id !== anchorMessageId)
+      .map((lineMsg) => {
+        const text = normalizeForContext(lineMsg.content ?? '', lineMsg.contentType ?? 'TEXT');
+        if (!text) return null;
+        return `${lineMsg.senderDisplay}: ${text}`;
+      })
+      .filter((x): x is string => Boolean(x))
+      .slice(-maxMessages)
+      .join('\n');
+
+  if (reachedLastBot) {
+    // chain is [anchor -> ... -> lastBot]; reverse to chronological order.
+    return makeLines(chain.slice().reverse());
+  }
+
+  // 2) Fallback to time-window between last bot and the anchor (still excludes anchor).
+  if (lastBotBeforeAnchor) {
+    const msgs = await prisma.message.findMany({
+      where: {
+        chatId,
+        createdAt: { gte: lastBotBeforeAnchor.createdAt, lt: anchor.createdAt },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: maxMessages + 4,
+      select: {
+        id: true,
+        content: true,
+        contentType: true,
+        sender: { select: { username: true, displayName: true } },
+      },
+    });
+
+    return msgs
+      .map((m) => {
+        const who = m.sender?.displayName || m.sender?.username || 'user';
+        const text = normalizeForContext(m.content ?? '', m.contentType ?? 'TEXT');
+        if (!text) return null;
+        return `${who}: ${text}`;
+      })
+      .filter((x): x is string => Boolean(x))
+      .slice(-maxMessages)
+      .join('\n');
+  }
+
+  // 3) Final fallback: last messages overall excluding anchor.
+  const msgs = await prisma.message.findMany({
+    where: { chatId },
+    orderBy: { createdAt: 'desc' },
+    take: maxMessages + 6,
+    select: {
+      id: true,
+      content: true,
+      contentType: true,
+      sender: { select: { username: true, displayName: true } },
+    },
+  });
+
+  return msgs
+    .reverse()
+    .filter((m) => m.id !== anchorMessageId)
+    .map((m) => {
+      const who = m.sender?.displayName || m.sender?.username || 'user';
+      const text = normalizeForContext(m.content ?? '', m.contentType ?? 'TEXT');
+      if (!text) return null;
+      return `${who}: ${text}`;
+    })
+    .filter((x): x is string => Boolean(x))
+    .slice(-maxMessages)
+    .join('\n');
+}
+
 function resolvePromptPath(): string {
   const fromEnv = process.env.BUBBLE_BOT_PROMPT_PATH?.trim();
   if (fromEnv) return path.isAbsolute(fromEnv) ? fromEnv : path.resolve(process.cwd(), fromEnv);
@@ -401,7 +596,8 @@ export async function maybeReplyAsBubbleBot(
   io: Server,
   chatId: string,
   userMessageText: string,
-  senderId: string
+  senderId: string,
+  anchorMessageId?: string
 ): Promise<void> {
   try {
     const chat = await prisma.chat.findUnique({
@@ -435,7 +631,12 @@ export async function maybeReplyAsBubbleBot(
     const promptText =
       isPrivate ? userMessageText : stripUsernameMention(userMessageText, BUBBLE_BOT_USERNAME);
 
-    const text = await completeChat(promptText);
+    const ctx = await buildChatContext(chatId, bot.id, anchorMessageId, 18).catch(() => '');
+    const userPrompt = ctx
+      ? `Контекст диалога (последние сообщения):\n${ctx}\n\nТекущее сообщение пользователя:\n${promptText}`
+      : promptText;
+
+    const text = await completeChat(userPrompt);
 
     const message = await prisma.message.create({
       data: {

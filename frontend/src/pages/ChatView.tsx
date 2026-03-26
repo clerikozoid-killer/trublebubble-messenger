@@ -33,9 +33,7 @@ import {
   Paintbrush,
   ShieldOff,
   Palette,
-  Camera,
   MapPin,
-  Image as ImageIcon,
   FolderOpen,
   Bookmark,
   BarChart3,
@@ -46,7 +44,10 @@ import ChatInfoModal from '../components/ChatInfoModal';
 import EmojiPicker from '../components/EmojiPicker';
 import PollCard from '../components/PollCard';
 import PollCreateModal from '../components/PollCreateModal';
+import GeoPickerModal, { type GeoChoice } from '../components/GeoPickerModal';
+import DrawMessageModal from '../components/DrawMessageModal';
 import { mediaUrl } from '../utils/mediaUrl';
+import { loadPendingCall, clearPendingCall, consumeAutoAcceptCall, type PendingCallPayload } from '../utils/pendingCall';
 import { getOutgoingReceipt } from '../utils/messageReceipt';
 import { setChatMute, isChatMuted, muteLabel } from '../utils/chatMute';
 import { useChatThemeStore, CHAT_THEME_PRESETS, type ChatThemeId } from '../stores/chatThemeStore';
@@ -58,6 +59,7 @@ import { getDiscussionLink, setDiscussionLink, getParentDiscussionLink } from '.
 import { getReaction, setReaction } from '../utils/messageReactions';
 import { translateText } from '../utils/translateText';
 import { useLanguageStore } from '../stores/languageStore';
+import type { LangCode } from '../i18n/languages';
 
 function memberLabel(count: number) {
   return `${count} ${count === 1 ? 'member' : 'members'}`;
@@ -76,6 +78,104 @@ function parsePollStub(content?: string): PollStub | null {
     const parsed = JSON.parse(content) as { kind?: unknown; pollId?: unknown };
     if (parsed?.kind === 'poll' && typeof parsed?.pollId === 'string') {
       return { kind: 'poll', pollId: parsed.pollId };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+type LocationStub = { kind: 'location'; label: string; lat: number; lng: number };
+
+type SpeechLocale =
+  | 'ru-RU'
+  | 'en-US'
+  | 'zh-CN'
+  | 'ja-JP'
+  | 'sr-RS'
+  | 'de-DE'
+  | 'fr-FR'
+  | 'es-ES'
+  | 'it-IT'
+  | 'pt-PT'
+  | 'ar-SA'
+  | 'hi-IN'
+  | 'uk-UA'
+  | 'tr-TR'
+  | 'el-GR'
+  | 'sa'
+  | 'eo';
+
+const UI_LANG_TO_SPEECH_LOCALE: Record<LangCode, SpeechLocale> = {
+  ru: 'ru-RU',
+  en: 'en-US',
+  zh: 'zh-CN',
+  ja: 'ja-JP',
+  sr: 'sr-RS',
+  de: 'de-DE',
+  fr: 'fr-FR',
+  es: 'es-ES',
+  it: 'it-IT',
+  pt: 'pt-PT',
+  ar: 'ar-SA',
+  hi: 'hi-IN',
+  uk: 'uk-UA',
+  tr: 'tr-TR',
+  ang: 'en-US',
+  grc: 'el-GR',
+  sa: 'sa',
+  eo: 'eo',
+  dothraki: 'en-US',
+  tlh: 'en-US',
+};
+
+const SPEECH_LOCALE_OPTIONS: Array<{ value: SpeechLocale; label: string }> = [
+  { value: 'ru-RU', label: 'Russian (ru-RU)' },
+  { value: 'en-US', label: 'English (en-US)' },
+  { value: 'zh-CN', label: 'Chinese (zh-CN)' },
+  { value: 'ja-JP', label: 'Japanese (ja-JP)' },
+  { value: 'sr-RS', label: 'Serbian (sr-RS)' },
+  { value: 'de-DE', label: 'German (de-DE)' },
+  { value: 'fr-FR', label: 'French (fr-FR)' },
+  { value: 'es-ES', label: 'Spanish (es-ES)' },
+  { value: 'it-IT', label: 'Italian (it-IT)' },
+  { value: 'pt-PT', label: 'Portuguese (pt-PT)' },
+  { value: 'ar-SA', label: 'Arabic (ar-SA)' },
+  { value: 'hi-IN', label: 'Hindi (hi-IN)' },
+  { value: 'uk-UA', label: 'Ukrainian (uk-UA)' },
+  { value: 'tr-TR', label: 'Turkish (tr-TR)' },
+  { value: 'el-GR', label: 'Greek (el-GR)' },
+  { value: 'eo', label: 'Esperanto (eo)' },
+];
+
+const TRANSLATE_TARGET_OPTIONS: Array<{ value: LangCode; label: string }> = [
+  { value: 'ru', label: 'Русский (ru)' },
+  { value: 'en', label: 'English (en)' },
+  { value: 'zh', label: '中文 / Chinese (zh)' },
+  { value: 'ja', label: '日本語 / Japanese (ja)' },
+  { value: 'sr', label: 'Српски / Serbian (sr)' },
+  { value: 'de', label: 'Deutsch (de)' },
+  { value: 'fr', label: 'Français (fr)' },
+  { value: 'es', label: 'Español (es)' },
+  { value: 'it', label: 'Italiano (it)' },
+  { value: 'pt', label: 'Português (pt)' },
+  { value: 'ar', label: 'العربية / Arabic (ar)' },
+  { value: 'hi', label: 'हिन्दी / Hindi (hi)' },
+  { value: 'uk', label: 'Українська / Ukrainian (uk)' },
+  { value: 'tr', label: 'Türkçe / Turkish (tr)' },
+];
+
+function parseLocationStub(content?: string): LocationStub | null {
+  if (!content) return null;
+  const t = content.trim();
+  if (!t.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(t) as { kind?: unknown; label?: unknown; lat?: unknown; lng?: unknown };
+    if (parsed?.kind === 'location' && typeof parsed?.label === 'string') {
+      const lat = typeof parsed?.lat === 'number' ? parsed.lat : Number(parsed.lat);
+      const lng = typeof parsed?.lng === 'number' ? parsed.lng : Number(parsed.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      return { kind: 'location', label: parsed.label, lat, lng };
     }
     return null;
   } catch {
@@ -145,8 +245,53 @@ export default function ChatView() {
   const pendingCallTypeRef = useRef<'audio' | 'video' | null>(null);
   const pendingFromUserIdRef = useRef<string | null>(null);
   const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const autoAcceptUiModeRef = useRef<'audio' | 'video' | null>(null);
   const wakeKeepAliveTimerRef = useRef<number | null>(null);
   const [callDebugLogs, setCallDebugLogs] = useState<string[]>([]);
+  const [callDebugExpanded, setCallDebugExpanded] = useState(false);
+  const [transcriptEnabled, setTranscriptEnabled] = useState(false);
+  const [translateEnabled, setTranslateEnabled] = useState(false);
+  const [translateHoldActive, setTranslateHoldActive] = useState(false);
+  const [cloudTranslationEnabled, setCloudTranslationEnabled] = useState(true);
+  const [duckingEnabled, setDuckingEnabled] = useState(true);
+  const [asrLangOverride, setAsrLangOverride] = useState<'auto' | SpeechLocale>('auto');
+  const [ttsLangOverride, setTtsLangOverride] = useState<'auto' | SpeechLocale>('auto');
+  const [translateTargetLang, setTranslateTargetLang] = useState<'auto' | LangCode>('auto');
+  const [skipTranslateTermsInput, setSkipTranslateTermsInput] = useState('');
+  const [micLevel, setMicLevel] = useState<number | null>(null);
+  const [netRttMs, setNetRttMs] = useState<number | null>(null);
+  const [peerSpeaking, setPeerSpeaking] = useState(false);
+  const [ttsSpeaking, setTtsSpeaking] = useState(false);
+  const [subtitle, setSubtitle] = useState<{ speaker: 'me' | 'peer'; original: string; translated?: string; lang?: string } | null>(null);
+  const [lastSpokenTranslated, setLastSpokenTranslated] = useState<string | null>(null);
+  const [showCallSummary, setShowCallSummary] = useState(false);
+  const [callSummaryText, setCallSummaryText] = useState<string | null>(null);
+  const [callTranscript, setCallTranscript] = useState<
+    Array<{
+      id: string;
+      at: number;
+      from: 'me' | 'peer';
+      text: string;
+      lang?: string;
+      translated?: string;
+      final?: boolean;
+    }>
+  >([]);
+  const recognitionRef = useRef<any>(null);
+  const callTranscriptRef = useRef<typeof callTranscript>([]);
+  const ttsQueueRef = useRef<string[]>([]);
+  const ttsCancelTokenRef = useRef<number>(0);
+  const localMicAnalyserRef = useRef<AnalyserNode | null>(null);
+  const ttsSpeakingRef = useRef(false);
+  const peerSpeakingTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    callTranscriptRef.current = callTranscript;
+  }, [callTranscript]);
+  const [hasAudioTrack, setHasAudioTrack] = useState(false);
+  const [hasVideoTrack, setHasVideoTrack] = useState(false);
+  const [localAudioEnabled, setLocalAudioEnabled] = useState(true);
+  const [localVideoEnabled, setLocalVideoEnabled] = useState(true);
 
   const pushCallLog = (msg: string, data?: unknown) => {
     const ts = new Date().toLocaleTimeString();
@@ -170,8 +315,419 @@ export default function ChatView() {
 
   const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+  const handleIncomingOffer = async (p: PendingCallPayload) => {
+    pushCallLog('handleIncomingOffer()', p);
+    if (!user?.id) return;
+    if (!chatId) return;
+    if (p.chatId !== chatId) return;
+    if (p.fromUserId && p.fromUserId === user.id) return;
+    if (callRoleRef.current !== 'idle') return;
+    if (p.callType !== 'audio' && p.callType !== 'video') return;
+
+    callRoleRef.current = 'callee';
+    callIdRef.current = p.callId;
+    pendingOfferRef.current = p.offer;
+    pendingCallTypeRef.current = p.callType;
+    pendingFromUserIdRef.current = p.fromUserId ?? null;
+    pendingIceCandidatesRef.current = [];
+
+    setCallUi({
+      mode: p.callType,
+      phase: 'incoming',
+      callId: p.callId,
+      fromUserId: p.fromUserId ?? '',
+    });
+  };
+
+  const toggleLocalAudio = () => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    const tracks = stream.getAudioTracks();
+    if (tracks.length === 0) return;
+    const next = !localAudioEnabled;
+    tracks.forEach((t) => {
+      t.enabled = next;
+    });
+    setLocalAudioEnabled(next);
+  };
+
+  const toggleLocalVideo = () => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    const tracks = stream.getVideoTracks();
+    if (tracks.length === 0) return;
+    const next = !localVideoEnabled;
+    tracks.forEach((t) => {
+      t.enabled = next;
+    });
+    setLocalVideoEnabled(next);
+  };
+
+  // Smart audio autoplay: do not start audio until PeerConnection is actually connected.
+  useEffect(() => {
+    if (!callUi) return;
+    if (callUi.mode !== 'audio') return;
+    if (callUi.phase !== 'in_call') return;
+    const a = remoteAudioRef.current;
+    if (!a) return;
+    void a.play().catch(() => undefined);
+  }, [callUi?.mode, callUi?.phase]);
+
+  const translateEngineEnabled = (translateEnabled || translateHoldActive) && cloudTranslationEnabled;
+
+  // Duck remote audio while translation is active (optional).
+  useEffect(() => {
+    const a = remoteAudioRef.current;
+    if (!a) return;
+    if (!translateEngineEnabled || !duckingEnabled) {
+      a.volume = 1;
+      return;
+    }
+    a.volume = ttsSpeaking ? 0.05 : peerSpeaking ? 0.2 : 0.2;
+  }, [translateEngineEnabled, duckingEnabled, ttsSpeaking, peerSpeaking]);
+
+  useEffect(() => {
+    ttsSpeakingRef.current = ttsSpeaking;
+  }, [ttsSpeaking]);
+
+  // Mic level indicator (RMS over mic track).
+  useEffect(() => {
+    if (!callUi || callUi.phase !== 'in_call') {
+      setMicLevel(null);
+      return;
+    }
+    if (!hasAudioTrack) {
+      setMicLevel(null);
+      return;
+    }
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    const tracks = stream.getAudioTracks();
+    if (tracks.length === 0) return;
+
+    let audioCtx: AudioContext | null = null;
+    let analyser: AnalyserNode | null = null;
+    let source: MediaStreamAudioSourceNode | null = null;
+    let raf = 0;
+
+    try {
+      audioCtx = new AudioContext();
+      source = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.85;
+      source.connect(analyser);
+
+      const buf = new Uint8Array(analyser.fftSize);
+      let lastUpdateTs = 0;
+      const loop = (ts: number) => {
+        if (!analyser) return;
+        analyser.getByteTimeDomainData(buf);
+        // RMS in 0..1-ish.
+        let sumSq = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const x = (buf[i] - 128) / 128;
+          sumSq += x * x;
+        }
+        const rms = Math.sqrt(sumSq / buf.length);
+        const pct = Math.max(0, Math.min(1, rms * 4));
+        if (ts - lastUpdateTs > 160) {
+          setMicLevel(pct);
+          lastUpdateTs = ts;
+        }
+        raf = window.requestAnimationFrame(loop);
+      };
+
+      raf = window.requestAnimationFrame(loop);
+      localMicAnalyserRef.current = analyser;
+    } catch {
+      setMicLevel(null);
+    }
+
+    return () => {
+      try {
+        if (raf) window.cancelAnimationFrame(raf);
+      } catch {
+        // ignore
+      }
+      try {
+        source?.disconnect?.();
+      } catch {
+        // ignore
+      }
+      try {
+        analyser?.disconnect?.();
+      } catch {
+        // ignore
+      }
+      try {
+        void audioCtx?.close?.();
+      } catch {
+        // ignore
+      }
+      localMicAnalyserRef.current = null;
+      setMicLevel(null);
+    };
+  }, [callUi?.phase, callUi?.callId, hasAudioTrack]);
+
+  // Network RTT indicator via RTCPeerConnection stats (best-effort).
+  useEffect(() => {
+    if (!callUi || callUi.phase !== 'in_call') {
+      setNetRttMs(null);
+      return;
+    }
+    const interval = window.setInterval(async () => {
+      const pc = pcRef.current;
+      if (!pc) return;
+      try {
+        const stats = await pc.getStats();
+        let rttSeconds: number | null = null;
+        stats.forEach((report) => {
+          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+            const anyRep = report as unknown as { currentRoundTripTime?: unknown };
+            const maybe = anyRep.currentRoundTripTime;
+            if (typeof maybe === 'number' && Number.isFinite(maybe)) {
+              rttSeconds = maybe;
+            }
+          }
+        });
+        if (typeof rttSeconds === 'number') {
+          setNetRttMs(Math.max(1, Math.round(rttSeconds * 1000)));
+        }
+      } catch {
+        // ignore
+      }
+    }, 2000);
+
+    return () => window.clearInterval(interval);
+  }, [callUi?.phase, callUi?.callId]);
+
+  useEffect(() => {
+    if (translateEngineEnabled) return;
+    try {
+      window.speechSynthesis?.cancel?.();
+    } catch {
+      // ignore
+    }
+    ttsQueueRef.current = [];
+    setTtsSpeaking(false);
+  }, [translateEngineEnabled]);
+
+  const clearAndCancelTts = () => {
+    ttsQueueRef.current = [];
+    ttsCancelTokenRef.current += 1;
+    try {
+      window.speechSynthesis?.cancel?.();
+    } catch {
+      // ignore
+    }
+    ttsSpeakingRef.current = false;
+    setTtsSpeaking(false);
+  };
+
+  const speakFromQueue = (lang: SpeechLocale, cancelToken: number) => {
+    if (!translateEngineEnabled) return;
+    if (ttsQueueRef.current.length === 0) return;
+    const text = ttsQueueRef.current[0];
+
+    // If user toggled quickly: cancel by token.
+    if (cancelToken !== ttsCancelTokenRef.current) return;
+
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang;
+    u.rate = 1.05;
+    u.pitch = 1.0;
+    u.onstart = () => {
+      if (cancelToken !== ttsCancelTokenRef.current) return;
+      ttsSpeakingRef.current = true;
+      setTtsSpeaking(true);
+    };
+    u.onend = () => {
+      if (cancelToken !== ttsCancelTokenRef.current) return;
+      ttsQueueRef.current.shift();
+      ttsSpeakingRef.current = false;
+      setTtsSpeaking(false);
+      // Speak next.
+      if (ttsQueueRef.current.length > 0) {
+        try {
+          speakFromQueue(lang, cancelToken);
+        } catch {
+          // ignore
+        }
+      }
+    };
+    u.onerror = () => {
+      if (cancelToken !== ttsCancelTokenRef.current) return;
+      ttsQueueRef.current.shift();
+      ttsSpeakingRef.current = false;
+      setTtsSpeaking(false);
+    };
+
+    window.speechSynthesis?.speak?.(u);
+  };
+
+  const enqueueTts = (text: string) => {
+    if (!translateEngineEnabled) return;
+    if (!text.trim()) return;
+    const wasEmpty = ttsQueueRef.current.length === 0;
+    ttsQueueRef.current.push(text);
+    if (!wasEmpty) return;
+    // Mark speaking immediately to avoid multiple start calls before onstart fires.
+    ttsSpeakingRef.current = true;
+    setTtsSpeaking(true);
+    const token = ttsCancelTokenRef.current;
+    try {
+      speakFromQueue(ttsLang, token);
+    } catch {
+      // ignore
+    }
+  };
+
+  const recognitionLang = useMemo(() => {
+    if (asrLangOverride !== 'auto') return asrLangOverride;
+    return UI_LANG_TO_SPEECH_LOCALE[language] ?? 'en-US';
+  }, [language, asrLangOverride]);
+
+  const ttsLang = useMemo(() => {
+    if (ttsLangOverride !== 'auto') return ttsLangOverride;
+    return recognitionLang;
+  }, [ttsLangOverride, recognitionLang]);
+
+  const translateTarget = useMemo(() => {
+    if (translateTargetLang !== 'auto') return translateTargetLang;
+    return language;
+  }, [translateTargetLang, language]);
+
+  const skipTranslateTerms = useMemo(() => {
+    const raw = skipTranslateTermsInput
+      .split(/[,;\n]/g)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return raw.map((s) => s.toLowerCase());
+  }, [skipTranslateTermsInput]);
+
+  // Start/stop Web Speech recognition for local speaker transcription.
+  useEffect(() => {
+    if (!callUi) return;
+    if (callUi.phase !== 'in_call') return;
+    if (!transcriptEnabled) {
+      try {
+        recognitionRef.current?.stop?.();
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null;
+      return;
+    }
+
+    const SpeechRecognitionImpl =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionImpl) {
+      setToast('Speech recognition is not supported in this browser');
+      setTranscriptEnabled(false);
+      return;
+    }
+
+    const rec = new SpeechRecognitionImpl();
+    rec.lang = recognitionLang;
+    rec.continuous = true;
+    rec.interimResults = true;
+
+    rec.onresult = (e: any) => {
+      try {
+        let finalText = '';
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          const t = String(r?.[0]?.transcript ?? '').trim();
+          if (!t) continue;
+          if (r.isFinal) finalText += (finalText ? ' ' : '') + t;
+          else interim += (interim ? ' ' : '') + t;
+        }
+
+        const send = (text: string, isFinal: boolean) => {
+          if (!chatId || !callUi?.callId) return;
+          socket.emit('call_transcript', {
+            chatId,
+            callId: callUi.callId,
+            text,
+            lang: recognitionLang,
+            final: isFinal,
+          });
+          setCallTranscript((prev) => [
+            ...prev.slice(-199),
+            {
+              id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+              at: Date.now(),
+              from: 'me',
+              text,
+              lang: recognitionLang,
+              final: isFinal,
+            },
+          ]);
+          setSubtitle({ speaker: 'me', original: text, translated: undefined, lang: recognitionLang });
+        };
+
+        if (finalText) send(finalText, true);
+        else if (interim && interim.length > 12) {
+          // keep interim from spamming too much: send only when sizable
+          send(interim, false);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    rec.onerror = () => {
+      // do not spam toasts; browser sometimes reports transient errors
+    };
+
+    rec.onend = () => {
+      // Auto-restart while enabled (some browsers stop periodically).
+      if (transcriptEnabled && callUi?.phase === 'in_call') {
+        try {
+          rec.start();
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    recognitionRef.current = rec;
+    try {
+      rec.start();
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      try {
+        rec.stop();
+      } catch {
+        // ignore
+      }
+      if (recognitionRef.current === rec) recognitionRef.current = null;
+    };
+  }, [callUi, transcriptEnabled, recognitionLang, chatId]);
+
   const cleanupCall = ({ emitEnd }: { emitEnd: boolean }) => {
     pushCallLog('cleanupCall()', { emitEnd, chatId, callId: callIdRef.current });
+    if (emitEnd) {
+      const transcript = callTranscriptRef.current ?? [];
+      const peerLines = transcript.filter((l) => l.from === 'peer').slice(-22);
+      if (peerLines.length > 0) {
+        const title = language === 'en' ? 'Call summary' : 'Итог звонка';
+        const bulletLines = peerLines.map((l) => {
+          if (l.translated && l.translated !== l.text) {
+            return `• ${l.text}\n  → ${l.translated}`;
+          }
+          return `• ${l.text}`;
+        });
+        setCallSummaryText([title, '', ...bulletLines].join('\n'));
+        setShowCallSummary(true);
+      }
+    }
     try {
       if (emitEnd && socket.connected && chatId && callIdRef.current) {
         pushCallLog('socket.emit(call_end)', { chatId, callId: callIdRef.current });
@@ -219,8 +775,36 @@ export default function ChatView() {
     pendingCallTypeRef.current = null;
     pendingFromUserIdRef.current = null;
     pendingIceCandidatesRef.current = [];
+    autoAcceptUiModeRef.current = null;
 
     setCallUi(null);
+    setTranscriptEnabled(false);
+    setTranslateEnabled(false);
+    setTranslateHoldActive(false);
+    setCloudTranslationEnabled(true);
+    setDuckingEnabled(true);
+    setPeerSpeaking(false);
+    setTtsSpeaking(false);
+    setSubtitle(null);
+    setLastSpokenTranslated(null);
+    setAsrLangOverride('auto');
+    setTtsLangOverride('auto');
+    setTranslateTargetLang('auto');
+    setCallTranscript([]);
+    callTranscriptRef.current = [];
+    ttsQueueRef.current = [];
+    ttsCancelTokenRef.current += 1;
+    try {
+      window.speechSynthesis?.cancel?.();
+    } catch {
+      // ignore
+    }
+    try {
+      recognitionRef.current?.stop?.();
+    } catch {
+      // ignore
+    }
+    recognitionRef.current = null;
   };
 
   const createPeerConnection = () => {
@@ -257,12 +841,10 @@ export default function ChatView() {
       if (remoteAudioRef.current) {
         try {
           remoteAudioRef.current.srcObject = remoteStreamRef.current;
-          void remoteAudioRef.current.play().catch(() => undefined);
         } catch {
           // ignore
         }
       }
-      setCallUi((cur) => (cur ? { ...cur, phase: 'in_call' } : cur));
     };
 
     pc.onconnectionstatechange = () => {
@@ -291,6 +873,19 @@ export default function ChatView() {
 
   const setLocalStreamToVideo = (stream: MediaStream, mode: 'audio' | 'video') => {
     localStreamRef.current = stream;
+    const audioTracks = stream.getAudioTracks();
+    const videoTracks = stream.getVideoTracks();
+    setHasAudioTrack(audioTracks.length > 0);
+    setHasVideoTrack(videoTracks.length > 0);
+    // Default: enabled. Toggling is handled by UI controls.
+    setLocalAudioEnabled(audioTracks.length > 0);
+    setLocalVideoEnabled(videoTracks.length > 0);
+    audioTracks.forEach((t) => {
+      t.enabled = audioTracks.length > 0;
+    });
+    videoTracks.forEach((t) => {
+      t.enabled = videoTracks.length > 0;
+    });
     if (localVideoRef.current) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (localVideoRef.current as any).srcObject = stream;
@@ -318,6 +913,8 @@ export default function ChatView() {
   const startCallerCall = async (mode: 'audio' | 'video') => {
     setCallDebugLogs([]);
     pushCallLog('startCallerCall()', { mode, chatId, userId: user?.id });
+    setShowCallSummary(false);
+    setCallSummaryText(null);
     if (!chatId || !user?.id) return;
     if (callRoleRef.current !== 'idle') return;
 
@@ -334,8 +931,11 @@ export default function ChatView() {
     // 1) поднимаем локальный медиа (пользователь даст доступ)
     const constraints =
       mode === 'video'
-        ? { audio: true, video: { facingMode: 'user' as const } }
-        : { audio: true, video: false };
+        ? {
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1 },
+            video: { facingMode: 'user' as const },
+          }
+        : { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1, suppressLocalAudioPlayback: true }, video: false };
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -402,12 +1002,16 @@ export default function ChatView() {
 
   const acceptIncomingCall = async () => {
     pushCallLog('acceptIncomingCall()');
+    setShowCallSummary(false);
+    setCallSummaryText(null);
     if (!chatId || !user?.id) return;
     if (callRoleRef.current !== 'callee') return;
     if (!pendingOfferRef.current || !pendingCallTypeRef.current) return;
     if (callIdRef.current == null) return;
 
     const mode = pendingCallTypeRef.current;
+    const requestedUiMode = autoAcceptUiModeRef.current;
+    const uiMode = requestedUiMode ?? mode;
     const offerInit = pendingOfferRef.current;
     const callId = callIdRef.current;
 
@@ -419,14 +1023,15 @@ export default function ChatView() {
       return;
     }
 
-    setCallUi((cur) =>
-      cur ? { ...cur, phase: 'calling' } : cur
-    );
+    setCallUi((cur) => (cur ? { ...cur, phase: 'calling', mode: uiMode } : cur));
 
     const constraints =
       mode === 'video'
-        ? { audio: true, video: { facingMode: 'user' as const } }
-        : { audio: true, video: false };
+        ? {
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1 },
+            video: { facingMode: 'user' as const },
+          }
+        : { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1, suppressLocalAudioPlayback: true }, video: false };
 
     let stream: MediaStream;
     try {
@@ -440,6 +1045,16 @@ export default function ChatView() {
     }
 
     setLocalStreamToVideo(stream, mode);
+
+    // If we accepted "audio-only" UI for a video offer, disable local camera track,
+    // but keep the WebRTC negotiation mode intact.
+    if (uiMode === 'audio' && mode === 'video') {
+      const tracks = stream.getVideoTracks();
+      tracks.forEach((t) => {
+        t.enabled = false;
+      });
+      setLocalVideoEnabled(false);
+    }
 
     const pc = createPeerConnection();
     stream.getTracks().forEach((t) => pc.addTrack(t, stream));
@@ -463,6 +1078,8 @@ export default function ChatView() {
       setToast('Call failed to start');
       cleanupCall({ emitEnd: false });
     }
+
+    autoAcceptUiModeRef.current = null;
   };
 
   const rejectIncomingCall = () => {
@@ -497,6 +1114,8 @@ export default function ChatView() {
   pendingAttachmentsRef.current = pendingAttachments;
 
   const [showPollModal, setShowPollModal] = useState(false);
+  const [showGeoModal, setShowGeoModal] = useState(false);
+  const [showDrawModal, setShowDrawModal] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -693,30 +1312,9 @@ export default function ChatView() {
   useEffect(() => {
     if (!chatId || !user?.id) return;
 
-    const onOffer = async (p: {
-      chatId: string;
-      callId: string;
-      offer: RTCSessionDescriptionInit;
-      callType: 'audio' | 'video';
-      fromUserId: string;
-    }) => {
+    const onOffer = async (p: PendingCallPayload) => {
       pushCallLog('socket.on(call_offer)', p);
-      if (p.chatId !== chatId) return;
-      if (p.fromUserId === user.id) return;
-      if (callRoleRef.current !== 'idle') return;
-
-      callRoleRef.current = 'callee';
-      callIdRef.current = p.callId;
-      pendingOfferRef.current = p.offer;
-      pendingCallTypeRef.current = p.callType;
-      pendingFromUserIdRef.current = p.fromUserId;
-
-      setCallUi({
-        mode: p.callType,
-        phase: 'incoming',
-        callId: p.callId,
-        fromUserId: p.fromUserId,
-      });
+      await handleIncomingOffer(p);
     };
 
     const onAnswer = async (p: {
@@ -787,11 +1385,99 @@ export default function ChatView() {
       cleanupCall({ emitEnd: false });
     };
 
+    const onTranscript = async (p: {
+      chatId: string;
+      callId: string;
+      text: string;
+      lang?: string;
+      final?: boolean;
+      fromUserId?: string;
+    }) => {
+      if (p.chatId !== chatId) return;
+      if (callIdRef.current == null || p.callId !== callIdRef.current) return;
+      if (!p.text) return;
+
+      const isFinal = Boolean(p.final);
+      const entryId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+      setCallTranscript((prev) => [
+        ...prev.slice(-199),
+        {
+          id: entryId,
+          at: Date.now(),
+          from: 'peer',
+          text: p.text,
+          lang: p.lang,
+          final: isFinal,
+        },
+      ]);
+
+      // Two-line subtitles: always show original; translated will fill later.
+      setSubtitle({
+        speaker: 'peer',
+        original: p.text,
+        translated: undefined,
+        lang: p.lang,
+      });
+
+      if (!translateEngineEnabled) return;
+
+      // Adaptive ducking: while interim text comes in, keep original reduced a bit.
+      if (!isFinal) {
+        setPeerSpeaking(true);
+        if (peerSpeakingTimeoutRef.current) window.clearTimeout(peerSpeakingTimeoutRef.current);
+        peerSpeakingTimeoutRef.current = window.setTimeout(() => setPeerSpeaking(false), 900);
+        return;
+      }
+
+      // Smart pause: speak only for final segments.
+      peerSpeakingTimeoutRef.current && window.clearTimeout(peerSpeakingTimeoutRef.current);
+      peerSpeakingTimeoutRef.current = null;
+      setPeerSpeaking(false);
+
+      // Dictionary exclusions: if text contains "skip" terms, do not translate.
+      if (skipTranslateTerms.length > 0) {
+        const lower = p.text.toLowerCase();
+        const shouldSkip = skipTranslateTerms.some((term) => term && lower.includes(term));
+        if (shouldSkip) {
+          setSubtitle({ speaker: 'peer', original: p.text, translated: undefined, lang: p.lang });
+          setLastSpokenTranslated(p.text);
+          enqueueTts(p.text);
+          return;
+        }
+      }
+
+      try {
+        const translated = await translateText(p.text, translateTarget);
+        const toSpeak = translated && translated.trim() ? translated : p.text;
+
+        if (translated && translated !== p.text) {
+          setCallTranscript((prev) =>
+            prev.map((x) => (x.id === entryId ? { ...x, translated } : x))
+          );
+        }
+
+        setSubtitle({
+          speaker: 'peer',
+          original: p.text,
+          translated: translated && translated !== p.text ? translated : undefined,
+          lang: p.lang,
+        });
+        setLastSpokenTranslated(toSpeak);
+        enqueueTts(toSpeak);
+      } catch {
+        setSubtitle({ speaker: 'peer', original: p.text, translated: undefined, lang: p.lang });
+        setLastSpokenTranslated(p.text);
+        enqueueTts(p.text);
+      }
+    };
+
     socket.on('call_offer', onOffer);
     socket.on('call_answer', onAnswer);
     socket.on('call_ice', onIce);
     socket.on('call_rejected', onRejected);
     socket.on('call_end', onEnd);
+    socket.on('call_transcript', onTranscript);
 
     return () => {
       socket.off('call_offer', onOffer);
@@ -799,8 +1485,28 @@ export default function ChatView() {
       socket.off('call_ice', onIce);
       socket.off('call_rejected', onRejected);
       socket.off('call_end', onEnd);
+      socket.off('call_transcript', onTranscript);
     };
-  }, [chatId, user]);
+  }, [chatId, user, translateEngineEnabled, translateTarget, ttsLang, skipTranslateTerms, cloudTranslationEnabled]);
+
+  // If a call offer arrived while user wasn't in this chat view,
+  // it is stored globally and should be applied when opening the chat.
+  useEffect(() => {
+    if (!chatId) return;
+    const pending = loadPendingCall(chatId);
+    if (!pending) return;
+    const requestedMode = consumeAutoAcceptCall(chatId, pending.callId);
+    clearPendingCall(chatId);
+    autoAcceptUiModeRef.current = requestedMode;
+    void handleIncomingOffer(pending);
+    if (requestedMode) {
+      // Ensure pending refs are set before accepting.
+      queueMicrotask(() => {
+        void acceptIncomingCall();
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId]);
 
   const uploadVoiceBlob = async (blob: Blob) => {
     if (!chatId) return;
@@ -970,6 +1676,68 @@ export default function ChatView() {
       socket.stopTyping(chatId);
     } catch {
       setToast('Could not send. Check connection and try again.');
+    } finally {
+      setUploadBusy(false);
+    }
+  };
+
+  const sendLocationMessage = async (choice: GeoChoice) => {
+    if (!chatId) return;
+    const rid = replyingTo?.id;
+    setReplyingTo(null);
+    setShowGeoModal(false);
+    setUploadBusy(true);
+    try {
+      const content = JSON.stringify({
+        kind: 'location',
+        label: choice.label,
+        lat: choice.lat,
+        lng: choice.lng,
+      });
+      const sockConnected = socket.connected;
+      if (sockConnected) {
+        socket.sendMessage({
+          chatId,
+          content,
+          contentType: 'TEXT',
+          replyToId: rid,
+        });
+      } else {
+        await sendMessage(chatId, content, 'TEXT', rid);
+      }
+    } finally {
+      setUploadBusy(false);
+    }
+  };
+
+  const sendDrawingAsImage = async (blob: Blob) => {
+    if (!chatId) return;
+    const rid = replyingTo?.id;
+    setReplyingTo(null);
+    setShowDrawModal(false);
+    setUploadBusy(true);
+    try {
+      const uploaded = await api.uploadChatMedia(chatId, blob, 'drawing.png');
+      const sockConnected = socket.connected;
+      if (sockConnected) {
+        socket.sendMessage({
+          chatId,
+          content: '',
+          contentType: uploaded.contentType,
+          mediaUrl: uploaded.mediaUrl,
+          mediaSize: uploaded.mediaSize,
+          replyToId: rid,
+        });
+      } else {
+        const created = await api.post<Message>(`/messages/chat/${chatId}`, {
+          content: '',
+          contentType: uploaded.contentType,
+          mediaUrl: uploaded.mediaUrl,
+          mediaSize: uploaded.mediaSize,
+          replyToId: rid,
+        });
+        useMessageStore.getState().addMessage(chatId, created);
+      }
     } finally {
       setUploadBusy(false);
     }
@@ -1410,7 +2178,7 @@ export default function ChatView() {
 
       {callUi && (
         <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-background-light border border-background-medium rounded-xl shadow-2xl overflow-hidden">
+          <div className="w-full max-w-5xl bg-background-light border border-background-medium rounded-xl shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-background-medium/70">
               <div className="text-sm font-semibold text-text-primary">
                 {callUi.phase === 'incoming'
@@ -1419,91 +2187,292 @@ export default function ChatView() {
                     ? 'Video call'
                     : 'Voice call'}
               </div>
-              <button
-                type="button"
-                className="p-2 hover:bg-background-light rounded-full transition-colors"
-                aria-label="Close call"
-                onClick={() => {
-                  if (callUi.phase === 'incoming') rejectIncomingCall();
-                  else endCall();
-                }}
-              >
-                <X className="w-5 h-5 text-text-secondary" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+                    translateEnabled
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-background-light border-background-medium hover:bg-background-medium text-text-primary'
+                  }`}
+                  onClick={() => setTranslateEnabled((v) => !v)}
+                  title="Translation"
+                >
+                  Перевод
+                </button>
+                <button
+                  type="button"
+                  className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+                    translateHoldActive
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-background-light border-background-medium hover:bg-background-medium text-text-primary'
+                  }`}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    setTranslateHoldActive(true);
+                  }}
+                  onPointerUp={() => setTranslateHoldActive(false)}
+                  onPointerCancel={() => setTranslateHoldActive(false)}
+                  onPointerLeave={() => setTranslateHoldActive(false)}
+                  title="Hold to translate"
+                >
+                  Hold
+                </button>
+                <button
+                  type="button"
+                  className="p-2 hover:bg-background-light rounded-full transition-colors"
+                  aria-label="Close call"
+                  onClick={() => {
+                    if (callUi.phase === 'incoming') rejectIncomingCall();
+                    else endCall();
+                  }}
+                >
+                  <X className="w-5 h-5 text-text-secondary" />
+                </button>
+              </div>
             </div>
 
             <div className="relative px-4 py-4">
-              {callUi.mode === 'audio' ? (
-                <div className="grid grid-cols-1 gap-3">
-                  <audio ref={remoteAudioRef} autoPlay playsInline className="sr-only" />
-                  <div className="w-full h-56 rounded-lg bg-background-dark/70 border border-background-medium/60 flex items-center justify-center">
-                    <div className="flex flex-col items-center gap-3 text-text-secondary">
-                      {/* Simple inline cat placeholder (replaces the black connection UI for audio calls). */}
-                      <svg width="56" height="56" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-                        <path
-                          d="M16 22c0-9 6-14 16-14s16 5 16 14v8c0 14-7 24-16 24S16 44 16 30v-8Z"
-                          fill="#FF2B5E"
-                          fillOpacity="0.18"
-                        />
-                        <path
-                          d="M18 18 9 26c-2 2-2 6 0 8l5 5"
-                          stroke="#FF2B5E"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <path
-                          d="M46 18 55 26c2 2 2 6 0 8l-5 5"
-                          stroke="#FF2B5E"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <path
-                          d="M24 27c0-3 3-6 8-6s8 3 8 6"
-                          stroke="#FF2B5E"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                        />
-                        <circle cx="26.5" cy="34" r="3.5" fill="#FF2B5E" />
-                        <circle cx="43.5" cy="34" r="3.5" fill="#FF2B5E" />
-                        <path
-                          d="M32 36c-4 2-6 6-6 8 0 3 3 5 6 5s6-2 6-5c0-2-2-6-6-8Z"
-                          fill="#FF2B5E"
-                          fillOpacity="0.28"
-                        />
-                        <path
-                          d="M28 44c1.5 2 3 3 4 3s2.5-1 4-3"
-                          stroke="#FF2B5E"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      <span className="text-sm">
-                        {callUi.phase === 'in_call' ? 'Voice call in progress' : 'Connecting voice call...'}
-                      </span>
+              <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
+                <div>
+                  {callUi.mode === 'audio' ? (
+                    <div className="grid grid-cols-1 gap-3">
+                      <audio ref={remoteAudioRef} playsInline className="sr-only" />
+                      <div className="relative overflow-hidden w-full h-[22rem] rounded-lg bg-background-dark/70 border border-background-medium/60 flex items-center justify-center">
+                      {subtitle && (
+                        <div className="absolute bottom-3 left-3 right-3 z-10 bg-black/55 text-white rounded-xl px-3 py-2 pointer-events-none">
+                          <div className="text-[10px] text-white/80">
+                            {subtitle.speaker === 'me' ? 'You' : 'Peer'}
+                          </div>
+                          <div className="text-[11px] text-white/90 whitespace-pre-wrap break-words">{subtitle.original}</div>
+                          {subtitle.translated && (
+                            <div className="text-sm font-semibold whitespace-pre-wrap break-words">{subtitle.translated}</div>
+                          )}
+                        </div>
+                      )}
+                        <div className="flex flex-col items-center gap-3 text-text-secondary">
+                          {/* Cat placeholder */}
+                          <svg width="120" height="120" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+                            <path d="M16 22c0-9 6-14 16-14s16 5 16 14v8c0 14-7 24-16 24S16 44 16 30v-8Z" fill="#FF2B5E" fillOpacity="0.18" />
+                            <path d="M18 18 9 26c-2 2-2 6 0 8l5 5" stroke="#FF2B5E" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M46 18 55 26c2 2 2 6 0 8l-5 5" stroke="#FF2B5E" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M24 27c0-3 3-6 8-6s8 3 8 6" stroke="#FF2B5E" strokeWidth="3" strokeLinecap="round" />
+                            <circle cx="26.5" cy="34" r="3.8" fill="#FF2B5E" />
+                            <circle cx="43.5" cy="34" r="3.8" fill="#FF2B5E" />
+                            <path d="M32 36c-4 2-6 6-6 8 0 3 3 5 6 5s6-2 6-5c0-2-2-6-6-8Z" fill="#FF2B5E" fillOpacity="0.28" />
+                            <path d="M28 44c1.5 2 3 3 4 3s2.5-1 4-3" stroke="#FF2B5E" strokeWidth="2" strokeLinecap="round" />
+                          </svg>
+                          <span className="text-sm">
+                            {callUi.phase === 'in_call' ? 'Voice call in progress' : 'Connecting voice call...'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3">
+                      <div className="relative w-full">
+                        <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-[22rem] bg-black rounded-lg object-cover" />
+                        {subtitle && (
+                          <div className="absolute bottom-3 left-3 right-3 z-10 bg-black/55 text-white rounded-xl px-3 py-2 pointer-events-none">
+                            <div className="text-[10px] text-white/80">
+                              {subtitle.speaker === 'me' ? 'You' : 'Peer'}
+                            </div>
+                            <div className="text-[11px] text-white/90 whitespace-pre-wrap break-words">{subtitle.original}</div>
+                            {subtitle.translated && (
+                              <div className="text-sm font-semibold whitespace-pre-wrap break-words">{subtitle.translated}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex justify-end">
+                        <video ref={localVideoRef} autoPlay playsInline muted className="w-40 h-28 bg-black rounded-lg object-cover" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-background-medium/70 bg-background-dark/20 p-3 flex flex-col min-h-[22rem]">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-text-primary">Transcript</div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 rounded-lg bg-background-light border border-background-medium hover:bg-background-medium transition-colors text-sm"
+                        onClick={() => setTranscriptEnabled((v) => !v)}
+                      >
+                        {transcriptEnabled ? 'Stop' : 'Start'}
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+                          cloudTranslationEnabled
+                            ? 'bg-primary text-white border-primary'
+                            : 'bg-background-light border-background-medium hover:bg-background-medium text-text-primary'
+                        }`}
+                        onClick={() => {
+                          setCloudTranslationEnabled((v) => !v);
+                          if (cloudTranslationEnabled) {
+                            clearAndCancelTts();
+                          }
+                        }}
+                        title="Cloud translation uses /api/translate"
+                      >
+                        {cloudTranslationEnabled ? 'Cloud' : 'No cloud'}
+                      </button>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-3">
-                  <video
-                    ref={remoteVideoRef}
-                    autoPlay
-                    playsInline
-                    className="w-full h-56 bg-black rounded-lg object-cover"
-                  />
-                  <div className="flex justify-end">
-                    <video
-                      ref={localVideoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-28 h-20 bg-black rounded-lg object-cover"
-                    />
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] px-2 py-1 rounded-lg bg-background-dark/40 border border-background-medium/60 text-text-secondary">
+                      ASR: {transcriptEnabled ? 'On' : 'Off'}
+                    </span>
+                    <span className="text-[11px] px-2 py-1 rounded-lg bg-background-dark/40 border border-background-medium/60 text-text-secondary">
+                      Mic: {micLevel == null ? '--' : `${Math.round(micLevel * 100)}%`}
+                    </span>
+                    <span className="text-[11px] px-2 py-1 rounded-lg bg-background-dark/40 border border-background-medium/60 text-text-secondary">
+                      Net: {netRttMs == null ? '--' : `${netRttMs}ms`}
+                    </span>
+                    <span className="text-[11px] px-2 py-1 rounded-lg bg-background-dark/40 border border-background-medium/60 text-text-secondary">
+                      TTS: {ttsSpeaking ? 'Speaking' : 'Idle'}
+                    </span>
+                    <button
+                      type="button"
+                      className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${
+                        duckingEnabled
+                          ? 'bg-background-dark/40 border-background-medium/60 text-text-secondary hover:bg-background-dark/55'
+                          : 'bg-primary text-white border-primary'
+                      }`}
+                      onClick={() => setDuckingEnabled((v) => !v)}
+                      title="Toggle ducking (reduce original audio while translating)"
+                    >
+                      {duckingEnabled ? 'Ducking: On' : 'Ducking: Off'}
+                    </button>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <label className="text-xs text-text-secondary">
+                      ASR
+                      <select
+                        className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background-light border border-background-medium text-text-primary"
+                        value={asrLangOverride}
+                        onChange={(e) => setAsrLangOverride(e.target.value as 'auto' | SpeechLocale)}
+                      >
+                        <option value="auto">Auto</option>
+                        {SPEECH_LOCALE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs text-text-secondary">
+                      Translate to
+                      <select
+                        className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background-light border border-background-medium text-text-primary"
+                        value={translateTargetLang}
+                        onChange={(e) => setTranslateTargetLang(e.target.value as 'auto' | LangCode)}
+                      >
+                        <option value="auto">Auto</option>
+                        {TRANSLATE_TARGET_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs text-text-secondary">
+                      TTS
+                      <select
+                        className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background-light border border-background-medium text-text-primary"
+                        value={ttsLangOverride}
+                        onChange={(e) => setTtsLangOverride(e.target.value as 'auto' | SpeechLocale)}
+                      >
+                        <option value="auto">Auto</option>
+                        {SPEECH_LOCALE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={!lastSpokenTranslated || !translateEngineEnabled}
+                      onClick={() => {
+                        if (!lastSpokenTranslated) return;
+                        enqueueTts(lastSpokenTranslated);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+                        lastSpokenTranslated && translateEngineEnabled
+                          ? 'bg-primary text-white border-primary hover:opacity-95'
+                          : 'bg-background-light border-background-medium text-text-secondary disabled:opacity-60'
+                      }`}
+                      title="Repeat last spoken line"
+                    >
+                      Repeat
+                    </button>
+                    <span className="text-[11px] text-text-secondary px-1">Presets:</span>
+                    {(
+                      [
+                        { v: 'auto', label: 'Auto' },
+                        { v: 'ru', label: 'RU' },
+                        { v: 'en', label: 'EN' },
+                        { v: 'zh', label: 'ZH' },
+                        { v: 'ja', label: 'JA' },
+                      ] as const
+                    ).map((p) => (
+                      <button
+                        key={p.v}
+                        type="button"
+                        className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+                          translateTargetLang === p.v
+                            ? 'bg-background-dark/40 border-background-medium text-text-primary'
+                            : 'bg-background-light border-background-medium hover:bg-background-medium text-text-primary'
+                        }`}
+                        onClick={() => setTranslateTargetLang(p.v)}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-2">
+                    <label className="text-xs text-text-secondary">
+                      Skip terms (no translation)
+                      <input
+                        type="text"
+                        value={skipTranslateTermsInput}
+                        onChange={(e) => setSkipTranslateTermsInput(e.target.value)}
+                        placeholder="e.g. names, brands (comma-separated)"
+                        className="mt-1 w-full px-3 py-2 rounded-lg bg-background-light border border-background-medium text-text-primary"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mt-3 flex-1 overflow-y-auto rounded-lg bg-background-dark/40 border border-background-medium/50 p-2">
+                    {callTranscript.length === 0 ? (
+                      <div className="text-xs text-text-secondary">No transcript yet…</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {callTranscript.slice(-80).map((l) => (
+                          <div key={l.id} className="text-sm">
+                            <div className="text-[11px] text-text-secondary">
+                              {new Date(l.at).toLocaleTimeString()} · {l.from === 'me' ? 'Me' : 'Peer'} {l.lang ? `· ${l.lang}` : ''}
+                            </div>
+                            <div className="text-text-primary whitespace-pre-wrap break-words">{l.text}</div>
+                            {l.translated && (
+                              <div className="mt-0.5 text-text-secondary whitespace-pre-wrap break-words">{l.translated}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+              </div>
 
               {callUi.phase === 'waking' && (
                 <div className="absolute inset-0 bg-background-light/40 backdrop-blur-sm flex items-center justify-center">
@@ -1520,41 +2489,102 @@ export default function ChatView() {
                     className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:opacity-95 transition-opacity"
                     onClick={() => void acceptIncomingCall()}
                   >
-                    Accept
+                    {t('call.accept')}
                   </button>
                   <button
                     type="button"
                     className="flex-1 px-4 py-2 bg-background-light border border-background-medium rounded-lg hover:bg-background-medium transition-colors"
                     onClick={rejectIncomingCall}
                   >
-                    Reject
+                    {t('call.reject')}
                   </button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:opacity-95 transition-opacity"
-                  onClick={endCall}
-                >
-                  End
-                </button>
+                <div className="flex items-center gap-2 w-full">
+                  {hasAudioTrack && (
+                    <button
+                      type="button"
+                      className="flex-1 px-3 py-2 bg-background-light border border-background-medium rounded-lg hover:bg-background-medium transition-colors text-sm"
+                      onClick={toggleLocalAudio}
+                    >
+                      {localAudioEnabled ? t('call.mute') : t('call.unmute')}
+                    </button>
+                  )}
+                  {hasVideoTrack && (
+                    <button
+                      type="button"
+                      className="flex-1 px-3 py-2 bg-background-light border border-background-medium rounded-lg hover:bg-background-medium transition-colors text-sm"
+                      onClick={toggleLocalVideo}
+                    >
+                      {localVideoEnabled ? t('call.cameraOff') : t('call.cameraOn')}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="flex-1 px-3 py-2 bg-primary text-white rounded-lg hover:opacity-95 transition-opacity text-sm"
+                    onClick={endCall}
+                  >
+                    {t('call.end')}
+                  </button>
+                </div>
               )}
             </div>
             <div className="px-4 pb-3">
-              <div className="rounded-lg bg-background-dark/60 border border-background-medium/70 p-2 max-h-24 overflow-y-auto">
-                <div className="text-[11px] text-text-secondary mb-1">Call debug log</div>
-                {callDebugLogs.length === 0 ? (
-                  <div className="text-[11px] text-text-secondary/80">No events yet…</div>
-                ) : (
-                  <div className="space-y-0.5">
-                    {callDebugLogs.map((l, i) => (
-                      <div key={`${i}-${l.slice(0, 24)}`} className="text-[11px] leading-4 text-text-primary/90 break-all font-mono">
-                        {l}
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <button
+                type="button"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-background-dark/40 border border-background-medium/70 hover:bg-background-dark/55 transition-colors"
+                onClick={() => setCallDebugExpanded((v) => !v)}
+              >
+                <span className="text-[12px] text-text-secondary">Call debug log</span>
+                <span className="text-[12px] text-text-secondary">{callDebugExpanded ? 'Hide' : 'Show'}</span>
+              </button>
+              {callDebugExpanded && (
+                <div className="mt-2 rounded-lg bg-background-dark/60 border border-background-medium/70 p-2 max-h-40 overflow-y-auto">
+                  {callDebugLogs.length === 0 ? (
+                    <div className="text-[11px] text-text-secondary/80">No events yet…</div>
+                  ) : (
+                    <div className="space-y-0.5">
+                      {callDebugLogs.map((l, i) => (
+                        <div key={`${i}-${l.slice(0, 24)}`} className="text-[11px] leading-4 text-text-primary/90 break-all font-mono">
+                          {l}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCallSummary && callSummaryText && (
+        <div className="fixed inset-0 z-[260] bg-black/60 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-background-light border border-background-medium rounded-xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-background-medium/70">
+              <div className="text-sm font-semibold text-text-primary">
+                {language === 'en' ? 'Call summary' : 'Итог звонка'}
               </div>
+              <button
+                type="button"
+                className="p-2 hover:bg-background-light rounded-full transition-colors"
+                aria-label="Close call summary"
+                onClick={() => setShowCallSummary(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 whitespace-pre-wrap text-sm text-text-primary">
+              {callSummaryText}
+            </div>
+            <div className="px-4 py-3 border-t border-background-medium/70">
+              <button
+                type="button"
+                className="w-full px-4 py-2 bg-primary text-white rounded-lg hover:opacity-95 transition-opacity text-sm"
+                onClick={() => setShowCallSummary(false)}
+              >
+                OK
+              </button>
             </div>
           </div>
         </div>
@@ -1974,7 +3004,10 @@ export default function ChatView() {
                 const reactionEmoji = user?.id ? getReaction(user.id, message.id) : null;
                 const discussionLinked = Boolean(user?.id && chatId && getDiscussionLink(user.id, chatId, message.id));
                 const receipt =
-                  isOutgoing && user ? getOutgoingReceipt(message, user.id) : null;
+                   isOutgoing && user ? getOutgoingReceipt(message, user.id) : null;
+                const isPollMessage = Boolean(parsePollStub(message.content));
+                const isLocationMessage = Boolean(parseLocationStub(message.content));
+                const isRestrictedMessage = isPollMessage || isLocationMessage;
                 const showAvatar =
                   !isOutgoing &&
                   (msgIndex === 0 || group.messages[msgIndex - 1]?.senderId !== message.senderId);
@@ -1988,6 +3021,8 @@ export default function ChatView() {
                     id={`message-${message.id}`}
                     className="group"
                     onContextMenu={(e) => {
+                      // Poll/location stubs should not be editable/copiable via message menu.
+                      if (isRestrictedMessage) return;
                       e.preventDefault();
                       e.stopPropagation();
                       openMessageMenu(e, message);
@@ -2104,6 +3139,33 @@ export default function ChatView() {
                                     <PollCard chatId={chatId ?? ''} pollId={poll.pollId} />
                                   );
                                 }
+                                const loc = parseLocationStub(message.content);
+                                if (loc) {
+                                  return (
+                                    <div className="mt-2 rounded-xl overflow-hidden border border-background-medium/70 bg-background-dark/10">
+                                      <div className="h-36 bg-[#0B1220] flex items-center justify-center">
+                                        {/* Map placeholder for location messages */}
+                                        <svg width="220" height="120" viewBox="0 0 220 120" fill="none" aria-hidden="true">
+                                          <rect x="0" y="0" width="220" height="120" rx="14" fill="#0B1220" />
+                                          <path
+                                            d="M25 78 C55 38, 115 38, 145 83 C160 103, 173 110, 200 108"
+                                            stroke="#60A5FA"
+                                            strokeWidth="5"
+                                            strokeLinecap="round"
+                                          />
+                                          <circle cx="110" cy="70" r="9" fill="#FF2B5E" fillOpacity="0.25" />
+                                          <circle cx="110" cy="70" r="4" fill="#FF2B5E" />
+                                        </svg>
+                                      </div>
+                                      <div className="px-3 py-2">
+                                        <div className="text-sm font-semibold text-text-primary truncate">{loc.label}</div>
+                                        <div className="text-xs text-text-secondary tabular-nums">
+                                          {loc.lat.toFixed(4)}, {loc.lng.toFixed(4)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                }
 
                                 if (!message.content) return null;
                                 return (
@@ -2164,7 +3226,7 @@ export default function ChatView() {
                                 : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'
                             }`}
                           >
-                          <div className="flex flex-row items-center gap-0.5">
+                          {!isRestrictedMessage && <div className="flex flex-row items-center gap-0.5">
                             <button
                               type="button"
                               onClick={() => setReplyingTo(message)}
@@ -2191,7 +3253,7 @@ export default function ChatView() {
                             >
                               <MoreVertical className="w-4 h-4 text-text-secondary" />
                             </button>
-                          </div>
+                          </div>}
 
                           {showMessageMenu?.id === message.id && (
                             <>
@@ -2255,7 +3317,7 @@ export default function ChatView() {
                                   {pinnedMessage?.messageId === message.id ? t('message.unpin') : t('message.pin')}
                                 </button>
                               )}
-                              {!message.isDeleted && message.content && !parsePollStub(message.content) && (
+                              {!message.isDeleted && message.content && !parsePollStub(message.content) && !parseLocationStub(message.content) && (
                                 <button
                                   type="button"
                                   onClick={() => void handleCopyMessage(message)}
@@ -2493,37 +3555,35 @@ export default function ChatView() {
                 <button
                   type="button"
                   className="w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-background-light flex items-center gap-2"
-                  onClick={() => openFilePicker(attachInputRef)}
-                >
-                  <ImageIcon className="w-4 h-4 shrink-0 text-text-secondary" />
-                  Фото или видео
-                </button>
-                <button
-                  type="button"
-                  className="w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-background-light flex items-center gap-2"
-                  onClick={() => openFilePicker(attachCameraRef)}
-                >
-                  <Camera className="w-4 h-4 shrink-0 text-text-secondary" />
-                  Камера
-                </button>
-                <button
-                  type="button"
-                  className="w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-background-light flex items-center gap-2"
-                  onClick={() => openFilePicker(attachFileRef)}
+                  onClick={() => {
+                    setShowAttachMenu(false);
+                    openFilePicker(attachFileRef);
+                  }}
                 >
                   <FolderOpen className="w-4 h-4 shrink-0 text-text-secondary" />
-                  Файл
+                  {t('composer.file')}
                 </button>
                 <button
                   type="button"
                   className="w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-background-light flex items-center gap-2"
                   onClick={() => {
                     setShowAttachMenu(false);
-                    setToast('Геолокация будет доступна позже');
+                    setShowDrawModal(true);
+                  }}
+                >
+                  <Paintbrush className="w-4 h-4 shrink-0 text-text-secondary" />
+                  {t('composer.drawing')}
+                </button>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2.5 text-left text-sm text-text-primary hover:bg-background-light flex items-center gap-2"
+                  onClick={() => {
+                    setShowAttachMenu(false);
+                    setShowGeoModal(true);
                   }}
                 >
                   <MapPin className="w-4 h-4 shrink-0 text-text-secondary" />
-                  Геолокация
+                  {t('composer.geolocation')}
                 </button>
 
                 {(currentChat?.type === 'GROUP' || currentChat?.type === 'SUPERGROUP') && (
@@ -2536,7 +3596,7 @@ export default function ChatView() {
                     }}
                   >
                     <BarChart3 className="w-4 h-4 shrink-0 text-text-secondary" />
-                    Опрос
+                    {t('composer.poll')}
                   </button>
                 )}
               </div>
@@ -2745,6 +3805,18 @@ export default function ChatView() {
         chatId={chatId ?? ''}
         open={showPollModal}
         onClose={() => setShowPollModal(false)}
+      />
+
+      <GeoPickerModal
+        open={showGeoModal}
+        onClose={() => setShowGeoModal(false)}
+        onPick={(choice) => void sendLocationMessage(choice)}
+      />
+
+      <DrawMessageModal
+        open={showDrawModal}
+        onClose={() => setShowDrawModal(false)}
+        onSend={(blob) => void sendDrawingAsImage(blob)}
       />
 
       {showChatInfo && currentChat && (

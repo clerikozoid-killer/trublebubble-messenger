@@ -73,6 +73,52 @@ export default function ChatSidebar() {
 
   const bumpPins = () => setPinVersion((n) => n + 1);
 
+  const parsePollStub = (content?: string): { kind: 'poll'; pollId: string } | null => {
+    if (!content) return null;
+    const t = content.trim();
+    if (!t.startsWith('{')) return null;
+    try {
+      const parsed = JSON.parse(t) as { kind?: unknown; pollId?: unknown };
+      if (parsed?.kind === 'poll' && typeof parsed?.pollId === 'string') {
+        return { kind: 'poll', pollId: parsed.pollId };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const parseLocationStub = (
+    content?: string
+  ): { kind: 'location'; label: string; lat: number; lng: number } | null => {
+    if (!content) return null;
+    const t = content.trim();
+    if (!t.startsWith('{')) return null;
+    try {
+      const parsed = JSON.parse(t) as { kind?: unknown; label?: unknown; lat?: unknown; lng?: unknown };
+      if (parsed?.kind === 'location' && typeof parsed?.label === 'string') {
+        const lat = typeof parsed?.lat === 'number' ? parsed.lat : Number(parsed.lat);
+        const lng = typeof parsed?.lng === 'number' ? parsed.lng : Number(parsed.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        return { kind: 'location', label: parsed.label, lat, lng };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const lastMessagePreviewText = (chat: Chat): string => {
+    const lastMessage = chat.messages?.[0];
+    if (!lastMessage) return Number(chat.unreadCount) > 0 ? 'Новые сообщения' : 'Нет сообщений';
+    if (parsePollStub(lastMessage.content)) return '📊 Опрос';
+    if (parseLocationStub(lastMessage.content)) return '📍 Локация';
+    if (lastMessage.mediaUrl && !lastMessage.content?.trim()) return '[вложение]';
+    return lastMessage.content || (Number(chat.unreadCount) > 0 ? 'Новые сообщения' : 'Нет сообщений');
+  };
+
+  // (dedup) removed duplicate parsePollStub/lastMessagePreviewText
+
   useEffect(() => {
     // fetchChats uses Authorization header; ensure tokens are ready.
     if (!user?.id) return;
@@ -398,8 +444,7 @@ export default function ChatSidebar() {
                 <span className="text-xs text-text-secondary">{getChatIcon(chat)}</span>
               )}
               <p className="text-sm text-text-secondary truncate">
-                {lastMessage?.content ||
-                  (Number(chat.unreadCount) > 0 ? 'Новые сообщения' : 'Нет сообщений')}
+                {lastMessagePreviewText(chat)}
               </p>
               {Number(chat.unreadCount) > 0 && (
                 <span className="flex-shrink-0 min-w-[1.25rem] h-5 px-1 bg-primary rounded-full text-xs text-white flex items-center justify-center font-medium">

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
+import { useI18n } from '../i18n/useI18n';
 
 function Checkbox({
   checked,
@@ -40,6 +41,7 @@ export default function PollCreateModal({
   onClose: () => void;
   onCreated?: () => void;
 }) {
+  const { t } = useI18n();
   const [question, setQuestion] = useState('');
   const [options, setOptions] = useState<string[]>(['', '']);
   const [isAnonymous, setIsAnonymous] = useState(false);
@@ -139,7 +141,7 @@ export default function PollCreateModal({
       onCreated?.();
       onClose();
     } catch {
-      setError('Не удалось создать опрос');
+      setError(t('poll.createError'));
     } finally {
       setSubmitting(false);
     }
@@ -150,7 +152,7 @@ export default function PollCreateModal({
       <div className="w-full max-w-md rounded-2xl bg-background-medium border border-background-light shadow-2xl overflow-hidden animate-scale-in">
         <div className="px-4 py-3 border-b border-background-light/70">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold text-text-primary">Новый опрос</div>
+            <div className="text-sm font-semibold text-text-primary">{t('poll.new')}</div>
             <button type="button" onClick={onClose} className="p-1.5 hover:bg-background-light rounded-full transition-colors">
               ✕
             </button>
@@ -159,11 +161,11 @@ export default function PollCreateModal({
 
         <div className="px-4 py-4 space-y-4">
           <div>
-            <div className="text-sm font-medium text-text-secondary mb-2">Вопрос</div>
+            <div className="text-sm font-medium text-text-secondary mb-2">{t('poll.question')}</div>
             <input
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              placeholder="Можно ли так делать?"
+              placeholder={t('poll.questionPlaceholder')}
               className="w-full px-3 py-2.5 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
             />
           </div>
@@ -171,11 +173,11 @@ export default function PollCreateModal({
           <div className="border border-background-light/70 rounded-xl p-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-medium text-text-secondary">Медиа для опроса</div>
-                <div className="text-xs text-text-secondary mt-0.5">Картинка или рисунок (необязательно)</div>
+                <div className="text-sm font-medium text-text-secondary">{t('poll.mediaTitle')}</div>
+                <div className="text-xs text-text-secondary mt-0.5">{t('poll.mediaHint')}</div>
               </div>
               <div className="flex gap-2 shrink-0">
-                <button
+                  <button
                   type="button"
                   onClick={() => setMediaMode('none')}
                   className={[
@@ -183,7 +185,7 @@ export default function PollCreateModal({
                     mediaMode === 'none' ? 'bg-primary/15 border-primary/50 text-text-primary' : 'bg-background-light/50 border-background-light/50 text-text-secondary hover:text-text-primary',
                   ].join(' ')}
                 >
-                  Нет
+                  {t('poll.noMedia')}
                 </button>
                 <button
                   type="button"
@@ -193,7 +195,7 @@ export default function PollCreateModal({
                     mediaMode === 'image' ? 'bg-primary/15 border-primary/50 text-text-primary' : 'bg-background-light/50 border-background-light/50 text-text-secondary hover:text-text-primary',
                   ].join(' ')}
                 >
-                  Картинка
+                  {t('poll.imageMedia')}
                 </button>
                 <button
                   type="button"
@@ -203,7 +205,7 @@ export default function PollCreateModal({
                     mediaMode === 'draw' ? 'bg-primary/15 border-primary/50 text-text-primary' : 'bg-background-light/50 border-background-light/50 text-text-secondary hover:text-text-primary',
                   ].join(' ')}
                 >
-                  Рисунок
+                  {t('poll.drawMedia')}
                 </button>
               </div>
             </div>
@@ -333,7 +335,7 @@ export default function PollCreateModal({
           </div>
 
           <div className="space-y-2">
-            <div className="text-sm font-medium text-text-secondary">Варианты ответа</div>
+            <div className="text-sm font-medium text-text-secondary">{t('poll.optionsTitle')}</div>
 
             {options.map((opt, idx) => (
               <div key={idx} className="flex items-center gap-3">
@@ -354,7 +356,7 @@ export default function PollCreateModal({
                 <input
                   value={opt}
                   onChange={(e) => updateOption(idx, e.target.value)}
-                  placeholder={idx === 0 ? 'да' : 'нет'}
+                  placeholder={idx === 0 ? t('poll.optionYes') : t('poll.optionNo')}
                   className="flex-1 px-3 py-2 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
                 />
               </div>
@@ -366,23 +368,30 @@ export default function PollCreateModal({
               onClick={addOption}
               disabled={options.length >= 12}
             >
-              Можно добавить ещё 10 вариантов ответа
+              {t('poll.addOptions')}
             </button>
           </div>
 
           <div className="border-t border-background-light/70 pt-4 space-y-3">
-            <div className="text-sm font-medium text-text-secondary">Настройки</div>
+            <div className="text-sm font-medium text-text-secondary">{t('poll.settings')}</div>
             <div className="space-y-2">
-              <Checkbox checked={isAnonymous} onChange={setIsAnonymous} label="Анонимное голосование" />
-              <Checkbox checked={isMultiChoice} onChange={setIsMultiChoice} label="Выбор нескольких ответов" />
-              <Checkbox checked={isQuiz} onChange={(v) => { setIsQuiz(v); if (!v) setCorrectOptionIndex(0); }} label="Режим викторины" />
+              <Checkbox checked={isAnonymous} onChange={setIsAnonymous} label={t('poll.anonymous')} />
+              <Checkbox checked={isMultiChoice} onChange={setIsMultiChoice} label={t('poll.multiChoice')} />
+              <Checkbox
+                checked={isQuiz}
+                onChange={(v) => {
+                  setIsQuiz(v);
+                  if (!v) setCorrectOptionIndex(0);
+                }}
+                label={t('poll.quizMode')}
+              />
             </div>
           </div>
         </div>
 
         <div className="px-4 py-3 border-t border-background-light/70 flex items-center justify-between gap-3">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-text-secondary hover:bg-background-light transition-colors">
-            Отмена
+            {t('poll.cancel')}
           </button>
           <button
             type="button"
@@ -390,7 +399,7 @@ export default function PollCreateModal({
             disabled={!canCreate || submitting || mediaUploading}
             className="px-4 py-2 rounded-lg bg-primary text-white hover:opacity-95 transition-opacity disabled:opacity-50"
           >
-            Создать
+            {t('poll.create')}
           </button>
         </div>
 

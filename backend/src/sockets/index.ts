@@ -220,7 +220,7 @@ export const setupSocketHandlers = (io: Server) => {
           (typeof content === 'string' && content.trim()) ||
           (mediaUrl ? '[attachment]' : '');
         if (textForBot) {
-          void maybeReplyAsBubbleBot(io, chatId, textForBot, userId);
+          void maybeReplyAsBubbleBot(io, chatId, textForBot, userId, message.id);
         }
 
         members.forEach((m) => {
@@ -447,6 +447,33 @@ export const setupSocketHandlers = (io: Server) => {
         console.error('call_end error:', e);
       }
     });
+
+    // Live transcripts for calls (client-side ASR). Forward to peer(s).
+    socket.on(
+      'call_transcript',
+      async (data: { chatId: string; callId: string; text: string; lang?: string; final?: boolean }) => {
+        try {
+          const { chatId, callId, text, lang, final } = data;
+          if (!chatId || !callId) return;
+          if (!text || typeof text !== 'string' || !text.trim()) return;
+          const v = await validatePrivateOneToOne(chatId);
+          if (!v.allowed) return;
+          const peers = await getPeerUserIds(chatId);
+          peers.forEach((peerId) => {
+            io.to(`user:${peerId}`).emit('call_transcript', {
+              chatId,
+              callId,
+              text,
+              lang: typeof lang === 'string' ? lang : undefined,
+              final: Boolean(final),
+              fromUserId: userId,
+            });
+          });
+        } catch (e) {
+          console.error('call_transcript error:', e);
+        }
+      }
+    );
 
     // Handle marking messages as read
     socket.on('mark_read', async (data: { chatId: string; messageId?: string }) => {

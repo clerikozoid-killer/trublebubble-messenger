@@ -84,6 +84,7 @@ class SocketService {
       'call_ice',
       'call_end',
       'call_rejected',
+      'call_transcript',
       'poll_updated',
       'error',
     ];

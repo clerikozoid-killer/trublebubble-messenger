@@ -5,6 +5,8 @@ import fs from 'fs';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.routes.js';
 import userRoutes from './routes/user.routes.js';
 import chatRoutes from './routes/chat.routes.js';
@@ -37,6 +39,22 @@ export const io = new Server(httpServer, {
 registerIoServer(io);
 
 // Middleware
+// Security headers.
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // avoid breaking existing asset loading.
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
+// Basic rate limiting (helps against brute-force + abusive endpoints).
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300, // per 15 minutes per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use(
   cors({
     origin: corsOrigin,
@@ -45,6 +63,8 @@ app.use(
 );
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use('/api', apiLimiter);
 
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
 fs.mkdirSync(uploadDir, { recursive: true });

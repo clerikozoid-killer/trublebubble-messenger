@@ -10,7 +10,11 @@ export function useI18n() {
   const t = useCallback(
     (key: I18nKey) => {
       const cur: LangCode = language ?? DEFAULT_LANG;
-      return DICT[cur]?.[key] ?? DICT.ru[key] ?? key;
+      // Fallback order:
+      // 1) currently selected language
+      // 2) English (so translations "work" even when other langs miss keys)
+      // 3) Russian (final)
+      return DICT[cur]?.[key] ?? DICT.en?.[key] ?? DICT.ru[key] ?? key;
     },
     [language]
   );

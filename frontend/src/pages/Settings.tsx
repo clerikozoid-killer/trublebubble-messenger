@@ -130,20 +130,28 @@ export default function Settings() {
 
   const settingsGroups = [
     {
-      title: 'Account',
+      title: t('settings.menu.account'),
       items: [
-        { icon: User, label: 'Edit Profile', action: () => setActiveTab('profile') },
-        { icon: Lock, label: 'Privacy & Security', action: () => setActiveTab('privacy') },
+        {
+          icon: User,
+          label: t('settings.menu.editProfile'),
+          action: () => setActiveTab('profile'),
+        },
+        {
+          icon: Lock,
+          label: t('settings.menu.privacySecurity'),
+          action: () => setActiveTab('privacy'),
+        },
       ],
     },
     ...(user?.isAdmin
       ? [
           {
-            title: 'Administration',
+            title: t('settings.menu.administration'),
             items: [
               {
                 icon: Shield,
-                label: 'Create & manage users',
+                label: t('settings.menu.createManageUsers'),
                 action: () => navigate('/admin/users'),
               },
             ],
@@ -151,23 +159,23 @@ export default function Settings() {
         ]
       : []),
     {
-      title: 'Chats',
+      title: t('settings.menu.chats'),
       items: [
-        { icon: Users, label: 'Create Group', action: handleCreateGroup },
-        { icon: Hash, label: 'Create Channel', action: () => setActiveTab('create-channel') },
+        { icon: Users, label: t('settings.menu.createGroup'), action: handleCreateGroup },
+        { icon: Hash, label: t('settings.menu.createChannel'), action: () => setActiveTab('create-channel') },
       ],
     },
     {
       title: 'App',
       items: [
-        { icon: Bell, label: 'Notifications', action: () => setActiveTab('notifications') },
-        { icon: Palette, label: 'Appearance', action: () => setActiveTab('appearance') },
-        { icon: Globe, label: 'Language', action: () => setActiveTab('language') },
+        { icon: Bell, label: t('settings.menu.notifications'), action: () => setActiveTab('notifications') },
+        { icon: Palette, label: t('settings.menu.appearance'), action: () => setActiveTab('appearance') },
+        { icon: Globe, label: t('settings.menu.language'), action: () => setActiveTab('language') },
       ],
     },
     {
-      title: 'Support',
-      items: [{ icon: HelpCircle, label: 'Help', action: () => {} }],
+      title: t('settings.menu.help'),
+      items: [{ icon: HelpCircle, label: t('settings.menu.help'), action: () => {} }],
     },
   ];
 
@@ -187,10 +195,10 @@ export default function Settings() {
         </button>
         <h2 className="font-semibold text-text-primary">
           {activeTab === 'profile'
-            ? 'Edit profile'
+            ? t('settings.tab.editProfile')
             : activeTab === 'appearance'
-              ? 'Appearance'
-              : 'Settings'}
+              ? t('settings.tab.appearance')
+              : t('settings.tab.settings')}
         </h2>
       </div>
 
@@ -230,11 +238,11 @@ export default function Settings() {
                 <div className="w-10 h-10 rounded-full bg-status-danger/20 flex items-center justify-center">
                   <span className="text-xl">🚪</span>
                 </div>
-                <span className="text-status-danger">Log Out</span>
+              <span className="text-status-danger">{t('settings.logout')}</span>
               </button>
             </div>
 
-            <p className="text-center text-text-secondary text-sm pb-4">TrubleBubble</p>
+          <p className="text-center text-text-secondary text-sm pb-4">{t('settings.title.trublebubble')}</p>
           </div>
         ) : activeTab === 'profile' ? (
           <>

@@ -237,7 +237,7 @@ router.post('/chat/:chatId', authenticateToken, async (req, res) => {
         (typeof content === 'string' && content.trim()) ||
         (mediaUrl ? '[attachment]' : '');
       if (textForBot) {
-        void maybeReplyAsBubbleBot(io, chatId, textForBot, userId);
+        void maybeReplyAsBubbleBot(io, chatId, textForBot, userId, message.id);
       }
     }
 

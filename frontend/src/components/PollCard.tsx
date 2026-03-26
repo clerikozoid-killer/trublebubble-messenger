@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
 import { socket } from '../services/socket';
 import { mediaUrl } from '../utils/mediaUrl';
+import { useI18n } from '../i18n/useI18n';
 
 type PollSummary = {
   pollId: string;
@@ -38,6 +39,7 @@ export default function PollCard({
   pollId: string;
   compact?: boolean;
 }) {
+  const { t } = useI18n();
   const [summary, setSummary] = useState<PollSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -77,7 +79,7 @@ export default function PollCard({
   if (loading || !summary) {
     return (
       <div className={compact ? 'py-2' : 'py-3'}>
-        <div className="text-xs text-text-secondary">Loading poll…</div>
+        <div className="text-xs text-text-secondary">{t('poll.loading')}</div>
       </div>
     );
   }
@@ -135,7 +137,7 @@ export default function PollCard({
                   <div className="min-w-0 flex-1">
                     <div className="text-text-primary truncate">{opt.text}</div>
                     {summary.isQuiz && isCorrect && (
-                      <div className="mt-1 text-xs text-[#FF2B5E]">Правильный ответ</div>
+                      <div className="mt-1 text-xs text-[#FF2B5E]">{t('poll.correctAnswer')}</div>
                     )}
                   </div>
                   <div className="shrink-0 text-xs tabular-nums text-text-secondary">
@@ -149,10 +151,10 @@ export default function PollCard({
 
       {summary.isMultiChoice ? (
         <div className="text-[11px] text-[#0b0b0b] bg-background-light/40 rounded px-2 py-1 inline-block">
-          Можно выбрать несколько вариантов
+          {t('poll.multipleHint')}
         </div>
       ) : (
-        <div className="text-[11px] text-text-secondary">Выбор один</div>
+        <div className="text-[11px] text-text-secondary">{t('poll.singleHint')}</div>
       )}
     </div>
   );
