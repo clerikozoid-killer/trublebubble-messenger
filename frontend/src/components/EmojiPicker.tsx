@@ -27,10 +27,15 @@ function getTwemojiUrl(emoji: string): string | null {
   if (cached) return cached;
 
   // @twemoji/parser returns entities with `url` pointing to SVG on CDN.
-  const entities = parse(emoji);
-  const url = entities?.[0]?.url ?? null;
-  if (url) emojiUrlCache.set(emoji, url);
-  return url;
+  try {
+    const entities = parse(emoji);
+    const url = entities?.[0]?.url ?? null;
+    if (url) emojiUrlCache.set(emoji, url);
+    return url;
+  } catch {
+    // If parsing fails for a specific emoji, fallback to rendering the raw char.
+    return null;
+  }
 }
 
 function readRecent(): string[] {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
 import { socket } from '../services/socket';
+import { mediaUrl } from '../utils/mediaUrl';
 
 type PollSummary = {
   pollId: string;
@@ -11,6 +12,8 @@ type PollSummary = {
   isQuiz: boolean;
   correctOptionId: string | null;
   myOptionIds: string[];
+  mediaUrl: string | null;
+  mediaCaption: string | null;
   options: Array<{
     id: string;
     text: string;
@@ -80,7 +83,28 @@ export default function PollCard({
   }
 
   return (
-    <div className={compact ? 'space-y-2' : 'space-y-3'}>
+    <div
+      className={[
+        compact ? 'space-y-2' : 'space-y-3',
+        'rounded-xl border border-background-medium/70 bg-background-dark/15 p-2.5',
+      ].join(' ')}
+    >
+      {summary.mediaUrl && (
+        <div className="rounded-xl overflow-hidden border border-background-medium/60 bg-background-dark/10">
+          <img
+            src={mediaUrl(summary.mediaUrl) ?? ''}
+            alt=""
+            className="w-full max-h-56 object-cover"
+            draggable={false}
+          />
+          {summary.mediaCaption && (
+            <div className="px-3 py-2 text-xs text-text-secondary bg-background-dark/10">
+              {summary.mediaCaption}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="text-sm font-semibold text-text-primary">{summary.question}</div>
 
       <div className="space-y-2">
@@ -89,7 +113,10 @@ export default function PollCard({
           .sort((a, b) => a.order - b.order)
           .map((opt) => {
             const selected = myOptionSet.has(opt.id);
-            const isCorrect = summary.isQuiz && summary.correctOptionId === opt.id;
+            const hasVoted = summary.myOptionIds.length > 0;
+            // In quiz mode the correct answer must be revealed only after the user has voted.
+            const showCorrect = summary.isQuiz && hasVoted;
+            const isCorrect = showCorrect && summary.correctOptionId === opt.id;
             const count = formatVoteCount(opt.voteCount);
 
             return (
@@ -99,8 +126,8 @@ export default function PollCard({
                 onClick={() => void handleVote(opt.id)}
                 className={[
                   'w-full text-left px-3 py-2 rounded-lg border transition-colors',
-                  selected ? 'border-primary/60 bg-primary/10' : 'border-background-light/40 bg-background-dark/20',
-                  isCorrect ? 'ring-2 ring-[#FF2B5E]/40 border-[#FF2B5E]/50' : '',
+                  selected ? 'border-primary/60 bg-primary/15' : 'border-background-light/40 bg-background-dark/15',
+                  isCorrect ? 'ring-2 ring-[#FF2B5E]/35 border-[#FF2B5E]/45' : '',
                 ].join(' ')}
                 aria-label={`Vote: ${opt.text}`}
               >
@@ -121,7 +148,9 @@ export default function PollCard({
       </div>
 
       {summary.isMultiChoice ? (
-        <div className="text-[11px] text-text-secondary">Можно выбрать несколько вариантов</div>
+        <div className="text-[11px] text-[#0b0b0b] bg-background-light/40 rounded px-2 py-1 inline-block">
+          Можно выбрать несколько вариантов
+        </div>
       ) : (
         <div className="text-[11px] text-text-secondary">Выбор один</div>
       )}

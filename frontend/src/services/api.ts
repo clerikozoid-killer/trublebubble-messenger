@@ -332,6 +332,8 @@ class ApiService {
       isMultiChoice?: boolean;
       isQuiz?: boolean;
       correctOptionIndex?: number;
+      mediaUrl?: string | null;
+      mediaCaption?: string | null;
     }
   ): Promise<{ pollId: string }> {
     return this.post(`/polls/chat/${encodeURIComponent(chatId)}`, body);
@@ -355,6 +357,8 @@ class ApiService {
     isQuiz: boolean;
     correctOptionId: string | null;
     myOptionIds: string[];
+    mediaUrl: string | null;
+    mediaCaption: string | null;
     options: Array<{ id: string; text: string; order: number; voteCount: number }>;
   }> {
     return this.get(`/polls/${encodeURIComponent(pollId)}/summary`);

@@ -63,8 +63,6 @@ function memberLabel(count: number) {
   return `${count} ${count === 1 ? 'member' : 'members'}`;
 }
 
-const REACTION_EMOJIS = ['😀', '❤️', '😂', '🔥', '😮', '🤔', '🙏', '👎'];
-
 type PendingAttachment = { id: string; file: File; previewUrl: string };
 
 type ChatSearchFilter = 'all' | 'IMAGE' | 'VIDEO' | 'FILE' | 'VOICE';
@@ -102,6 +100,7 @@ export default function ChatView() {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [showMessageMenu, setShowMessageMenu] = useState<Message | null>(null);
   const [messageMenuPlacement, setMessageMenuPlacement] = useState<'above' | 'below'>('below');
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
   const [, setReactionVersion] = useState(0);
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [showChatSearch, setShowChatSearch] = useState(false);
@@ -138,6 +137,7 @@ export default function ChatView() {
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const callRoleRef = useRef<'idle' | 'caller' | 'callee'>('idle');
   const callIdRef = useRef<string | null>(null);
@@ -205,6 +205,13 @@ export default function ChatView() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (remoteVideoRef.current as any).srcObject = null;
     }
+    if (remoteAudioRef.current) {
+      try {
+        remoteAudioRef.current.srcObject = null;
+      } catch {
+        // ignore
+      }
+    }
 
     callRoleRef.current = 'idle';
     callIdRef.current = null;
@@ -246,6 +253,14 @@ export default function ChatView() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (remoteVideoRef.current as any).srcObject = remoteStreamRef.current;
         void remoteVideoRef.current.play().catch(() => undefined);
+      }
+      if (remoteAudioRef.current) {
+        try {
+          remoteAudioRef.current.srcObject = remoteStreamRef.current;
+          void remoteAudioRef.current.play().catch(() => undefined);
+        } catch {
+          // ignore
+        }
       }
       setCallUi((cur) => (cur ? { ...cur, phase: 'in_call' } : cur));
     };
@@ -491,6 +506,7 @@ export default function ChatView() {
   const attachFileRef = useRef<HTMLInputElement>(null);
   const attachMenuRef = useRef<HTMLDivElement>(null);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
+  const reactionButtonRef = useRef<HTMLButtonElement>(null);
   const [inputSel, setInputSel] = useState(0);
   const [mentionPickIdx, setMentionPickIdx] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -798,7 +814,8 @@ export default function ChatView() {
       const { mediaUrl, mediaSize } = await api.uploadChatMedia(chatId, blob, `voice.${ext}`);
       socket.sendMessage({
         chatId,
-        content: '🎤 Voice message',
+        // Voice messages should display only the player (no extra text label).
+        content: '',
         contentType: 'VOICE',
         mediaUrl,
         mediaSize,
@@ -1241,6 +1258,7 @@ export default function ChatView() {
     const isNarrow = typeof window !== 'undefined' && window.innerWidth < 640;
     const above = isNarrow ? true : y > window.innerHeight - 240;
     setMessageMenuPlacement(above ? 'above' : 'below');
+    setReactionPickerMessageId(null);
     setShowMessageMenu(m);
   };
 
@@ -1417,22 +1435,54 @@ export default function ChatView() {
             <div className="relative px-4 py-4">
               {callUi.mode === 'audio' ? (
                 <div className="grid grid-cols-1 gap-3">
+                  <audio ref={remoteAudioRef} autoPlay playsInline className="sr-only" />
                   <div className="w-full h-56 rounded-lg bg-background-dark/70 border border-background-medium/60 flex items-center justify-center">
                     <div className="flex flex-col items-center gap-3 text-text-secondary">
-                      <Phone className="w-10 h-10 text-primary" />
+                      {/* Simple inline cat placeholder (replaces the black connection UI for audio calls). */}
+                      <svg width="56" height="56" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+                        <path
+                          d="M16 22c0-9 6-14 16-14s16 5 16 14v8c0 14-7 24-16 24S16 44 16 30v-8Z"
+                          fill="#FF2B5E"
+                          fillOpacity="0.18"
+                        />
+                        <path
+                          d="M18 18 9 26c-2 2-2 6 0 8l5 5"
+                          stroke="#FF2B5E"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M46 18 55 26c2 2 2 6 0 8l-5 5"
+                          stroke="#FF2B5E"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M24 27c0-3 3-6 8-6s8 3 8 6"
+                          stroke="#FF2B5E"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                        />
+                        <circle cx="26.5" cy="34" r="3.5" fill="#FF2B5E" />
+                        <circle cx="43.5" cy="34" r="3.5" fill="#FF2B5E" />
+                        <path
+                          d="M32 36c-4 2-6 6-6 8 0 3 3 5 6 5s6-2 6-5c0-2-2-6-6-8Z"
+                          fill="#FF2B5E"
+                          fillOpacity="0.28"
+                        />
+                        <path
+                          d="M28 44c1.5 2 3 3 4 3s2.5-1 4-3"
+                          stroke="#FF2B5E"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        />
+                      </svg>
                       <span className="text-sm">
                         {callUi.phase === 'in_call' ? 'Voice call in progress' : 'Connecting voice call...'}
                       </span>
                     </div>
-                  </div>
-                  <div className="flex justify-end">
-                    <video
-                      ref={localVideoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-28 h-20 bg-black rounded-lg object-cover opacity-60"
-                    />
                   </div>
                 </div>
               ) : (
@@ -1557,7 +1607,7 @@ export default function ChatView() {
             </button>
           )}
           {info.isOnline && (
-            <div className="absolute bottom-0 right-0 w-3 h-3 bg-status-online rounded-full border-2 border-background-medium pointer-events-none" />
+            <div className="absolute right-0.5 bottom-0.5 w-2.5 h-2.5 bg-status-online rounded-full pointer-events-none shadow-[0_0_0_2px_rgba(255,255,255,0.08)]" />
           )}
         </div>
 
@@ -1993,16 +2043,18 @@ export default function ChatView() {
                             <div
                               className={`border-l-2 pl-2 mb-2 ${
                                 isOutgoing ? 'border-white/25' : 'border-text-secondary/30'
+                              } ${
+                                isOutgoing ? 'bg-white/10 rounded-r-md py-1.5 pr-2' : 'bg-background-dark/35 rounded-r-md py-1.5 pr-2'
                               }`}
                             >
                               <p
-                                className={`text-xs text-text-primary/80`}
+                                className={`text-xs ${isOutgoing ? 'text-white/90' : 'text-primary/90'}`}
                                 style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
                               >
                                 {message.replyTo.sender.displayName}
                               </p>
                               <p
-                                className={`text-sm truncate text-text-primary/90`}
+                                className={`text-sm truncate ${isOutgoing ? 'text-white' : 'text-text-primary'}`}
                                 style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
                               >
                                 {message.replyTo.content}
@@ -2145,7 +2197,10 @@ export default function ChatView() {
                             <>
                               <div
                                 className="fixed inset-0 z-20"
-                                onClick={() => setShowMessageMenu(null)}
+                                onClick={() => {
+                                  setShowMessageMenu(null);
+                                  setReactionPickerMessageId(null);
+                                }}
                                 aria-hidden
                               />
                               <div
@@ -2190,27 +2245,6 @@ export default function ChatView() {
                                     {t('message.discuss')}
                                   </button>
                                 )}
-                              {!message.isDeleted && user?.id && (
-                                <div className="px-3 py-2">
-                                  <div className="text-xs text-text-secondary mb-1">React</div>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {REACTION_EMOJIS.map((emoji) => (
-                                      <button
-                                        key={emoji}
-                                        type="button"
-                                        className="w-8 h-8 rounded-full bg-background-light hover:bg-background-medium flex items-center justify-center transition-colors"
-                                        onClick={() => {
-                                          setReaction(user.id, message.id, emoji);
-                                          setReactionVersion((n) => n + 1);
-                                          setShowMessageMenu(null);
-                                        }}
-                                      >
-                                        <span className="text-lg leading-none">{emoji}</span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
                               {!message.isDeleted && (
                                 <button
                                   type="button"
@@ -2250,6 +2284,41 @@ export default function ChatView() {
                                     <Trash2 className="w-4 h-4" />
                                     Delete
                                   </button>
+                                </>
+                              )}
+
+                              {!message.isDeleted && user?.id && (
+                                <>
+                                  <div className="my-1 border-t border-background-medium/80" />
+                                  <div className="px-3 py-2 flex items-center justify-center">
+                                    <button
+                                      ref={reactionButtonRef}
+                                      type="button"
+                                      onClick={() =>
+                                        setReactionPickerMessageId((cur) =>
+                                          cur === message.id ? null : message.id
+                                        )
+                                      }
+                                      className="w-10 h-10 rounded-full bg-background-light hover:bg-background-medium flex items-center justify-center transition-colors"
+                                      aria-label="Реакция"
+                                      title="Реакция"
+                                    >
+                                      <Smile className="w-5 h-5 text-text-secondary" />
+                                    </button>
+                                    {reactionPickerMessageId === message.id && (
+                                      <EmojiPicker
+                                        open={true}
+                                        onClose={() => setReactionPickerMessageId(null)}
+                                        onPick={(emoji) => {
+                                          setReaction(user.id, message.id, emoji);
+                                          setReactionVersion((n) => n + 1);
+                                          setReactionPickerMessageId(null);
+                                          setShowMessageMenu(null);
+                                        }}
+                                        anchorRef={reactionButtonRef}
+                                      />
+                                    )}
+                                  </div>
                                 </>
                               )}
                             </div>

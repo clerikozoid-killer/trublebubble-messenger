@@ -68,7 +68,12 @@ body {
 
 /* Selection */
 ::selection {
-  background: rgba(0, 136, 204, 0.7);
+  background: #ff2b5e;
+  color: #ffffff;
+}
+
+::-moz-selection {
+  background: #ff2b5e;
   color: #ffffff;
 }
 

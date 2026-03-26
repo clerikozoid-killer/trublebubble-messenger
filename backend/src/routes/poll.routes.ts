@@ -15,6 +15,8 @@ type CreatePollBody = {
   isQuiz?: boolean;
   correctOptionIndex?: number; // only when isQuiz
   replyToId?: string | null;
+  mediaUrl?: string | null;
+  mediaCaption?: string | null;
 };
 
 router.post('/chat/:chatId', authenticateToken, async (req, res) => {
@@ -35,6 +37,8 @@ router.post('/chat/:chatId', authenticateToken, async (req, res) => {
     const isMultiChoice = Boolean(body.isMultiChoice);
     const isQuiz = Boolean(body.isQuiz);
     const correctOptionIndex = typeof body.correctOptionIndex === 'number' ? body.correctOptionIndex : 0;
+    const mediaUrl = body.mediaUrl ?? null;
+    const mediaCaption = body.mediaCaption ?? null;
 
     // Verify user is a member and chat is group-like
     const membership = await prisma.chatMember.findUnique({
@@ -64,6 +68,8 @@ router.post('/chat/:chatId', authenticateToken, async (req, res) => {
         isAnonymous,
         isMultiChoice,
         isQuiz,
+        mediaUrl,
+        mediaCaption,
       },
       select: { id: true },
     });
@@ -245,6 +251,8 @@ async function getPollSummary(pollId: string, userId: string) {
       isMultiChoice: true,
       isQuiz: true,
       correctOptionId: true,
+      mediaUrl: true,
+      mediaCaption: true,
       options: { select: { id: true, text: true, order: true } },
     },
   });
@@ -274,6 +282,8 @@ async function getPollSummary(pollId: string, userId: string) {
     isMultiChoice: poll.isMultiChoice,
     isQuiz: poll.isQuiz,
     correctOptionId: poll.correctOptionId,
+    mediaUrl: poll.mediaUrl,
+    mediaCaption: poll.mediaCaption,
     myOptionIds,
     options: options.map((o) => ({
       id: o.id,

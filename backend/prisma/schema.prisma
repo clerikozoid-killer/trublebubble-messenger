@@ -156,6 +156,8 @@ model Poll {
   isMultiChoice Boolean @default(false)
   isQuiz       Boolean @default(false)
   correctOptionId String? @unique
+  mediaUrl     String?
+  mediaCaption String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
