@@ -5,8 +5,10 @@ import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { getSavedMessages, removeSavedMessage, type SavedMessageSnapshot } from '../utils/savedMessages';
 import { mediaUrl } from '../utils/mediaUrl';
+import { useI18n } from '../i18n/useI18n';
 
 export default function SavedMessages() {
+  const { t, language } = useI18n();
   const navigate = useNavigate();
   const [items, setItems] = useState<SavedMessageSnapshot[]>(() => getSavedMessages());
 
@@ -29,15 +31,15 @@ export default function SavedMessages() {
           type="button"
           onClick={() => navigate('/')}
           className="md:hidden p-2 hover:bg-background-light rounded-full transition-colors"
-          aria-label="Назад к чатам"
+          aria-label={t('saved.backToChatsAria')}
         >
           <ArrowLeft className="w-5 h-5 text-text-secondary" />
         </button>
         <Bookmark className="w-6 h-6 text-tg-link shrink-0" aria-hidden />
         <div className="min-w-0 flex-1">
-          <h1 className="font-semibold text-text-primary truncate">Избранное</h1>
+          <h1 className="font-semibold text-text-primary truncate">{t('saved.title')}</h1>
           <p className="text-xs text-text-secondary mt-0.5">
-            Сохраняйте сообщения через меню «⋯» в чате → «В избранное».
+            {t('saved.description')}
           </p>
         </div>
       </div>
@@ -45,7 +47,7 @@ export default function SavedMessages() {
       <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-3">
         {sorted.length === 0 ? (
           <p className="text-text-secondary text-sm text-center py-12 max-w-md mx-auto">
-            Пока пусто. Откройте любой чат, наведите на сообщение, нажмите «⋯» и выберите «В избранное».
+            {t('saved.emptyState')}
           </p>
         ) : (
           sorted.map((s) => (
@@ -58,7 +60,7 @@ export default function SavedMessages() {
                   <p className="font-medium text-text-primary truncate">{s.senderName}</p>
                   <p className="text-xs text-text-secondary">
                     {s.chatTitle ? `${s.chatTitle} · ` : ''}
-                    {format(new Date(s.createdAt), 'd MMM yyyy, HH:mm', { locale: ru })}
+                    {format(new Date(s.createdAt), 'd MMM yyyy, HH:mm', { locale: language === 'ru' ? ru : undefined })}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -66,8 +68,8 @@ export default function SavedMessages() {
                     type="button"
                     onClick={() => navigate(`/chat/${s.chatId}`)}
                     className="p-2 rounded-lg hover:bg-background-light text-tg-link"
-                    title="Открыть чат"
-                    aria-label="Открыть чат"
+                    title={t('saved.openChatTitle')}
+                    aria-label={t('saved.openChatTitle')}
                   >
                     <ExternalLink className="w-4 h-4" />
                   </button>
@@ -75,8 +77,8 @@ export default function SavedMessages() {
                     type="button"
                     onClick={() => remove(s.id)}
                     className="p-2 rounded-lg hover:bg-background-light text-text-secondary"
-                    title="Удалить из избранного"
-                    aria-label="Удалить из избранного"
+                    title={t('saved.removeSavedTitle')}
+                    aria-label={t('saved.removeSavedTitle')}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

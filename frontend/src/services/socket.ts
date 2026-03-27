@@ -70,6 +70,7 @@ class SocketService {
       'new_message',
       'message_edited',
       'message_deleted',
+      'message_animation',
       'message_sent',
       'message_delivered',
       'message_read',

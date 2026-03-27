@@ -225,7 +225,7 @@ export default function PollCreateModal({
                       const uploaded = await api.uploadChatMedia(chatId, f, f.name);
                       setMediaUrl(uploaded.mediaUrl);
                     } catch {
-                      setError('Не удалось загрузить картинку');
+                      setError(t('poll.create.imageUploadFailed'));
                       setMediaUrl(null);
                     } finally {
                       setMediaUploading(false);
@@ -263,7 +263,7 @@ export default function PollCreateModal({
                     onClick={() => clearCanvas()}
                     className="px-3 py-2 rounded-lg text-text-secondary hover:bg-background-light transition-colors text-sm"
                   >
-                    Очистить
+                    {t('poll.create.clearCanvas')}
                   </button>
                 </div>
                 <div className="rounded-xl border border-background-light/70 bg-black/80 p-2">
@@ -323,11 +323,11 @@ export default function PollCreateModal({
 
             {(mediaMode === 'image' || mediaMode === 'draw') && (
               <div className="mt-3">
-                <div className="text-sm font-medium text-text-secondary mb-2">Подпись</div>
+                <div className="text-sm font-medium text-text-secondary mb-2">{t('poll.create.caption')}</div>
                 <input
                   value={mediaCaption}
                   onChange={(e) => setMediaCaption(e.target.value)}
-                  placeholder="Например: что изображено на картинке"
+                  placeholder={t('poll.create.captionPlaceholder')}
                   className="w-full px-3 py-2.5 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
                 />
               </div>
@@ -347,7 +347,7 @@ export default function PollCreateModal({
                       'w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors',
                       correctOptionIndex === idx ? 'bg-primary border-primary' : 'bg-background-medium border-background-light',
                     ].join(' ')}
-                    aria-label="Set correct option"
+                    aria-label={t('poll.setCorrectOption')}
                   >
                     {correctOptionIndex === idx && <span className="w-2.5 h-2.5 rounded bg-white" />}
                   </button>

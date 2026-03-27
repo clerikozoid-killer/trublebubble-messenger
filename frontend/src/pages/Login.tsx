@@ -5,10 +5,12 @@ import { api } from '../services/api';
 import type { User } from '../types';
 import { Lock, ArrowRight } from 'lucide-react';
 import { BubbleLogo } from '../components/BubbleLogo';
+import { useI18n } from '../i18n/useI18n';
 
 export default function Login() {
   const navigate = useNavigate();
   const { setAuth, setUser } = useAuthStore();
+  const { t } = useI18n();
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -30,7 +32,7 @@ export default function Login() {
       }
       navigate('/');
     } catch {
-      setError('Invalid email/username or password.');
+      setError(t('auth.login.errorInvalidCredentials'));
     } finally {
       setIsLoading(false);
     }
@@ -43,20 +45,20 @@ export default function Login() {
           <div className="flex justify-center mb-4">
             <BubbleLogo variant="wordmark" size="lg" />
           </div>
-          <p className="text-text-secondary mt-2">Sign in to your account</p>
+          <p className="text-text-secondary mt-2">{t('auth.login.title')}</p>
         </div>
 
         <div className="bg-background-medium rounded-2xl p-6 shadow-xl">
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
-                Email or username
+                {t('auth.login.emailOrUsernameLabel')}
               </label>
               <input
                 type="text"
                 value={loginIdentifier}
                 onChange={(e) => setLoginIdentifier(e.target.value)}
-                placeholder="you@example.com or username"
+                placeholder={t('auth.login.emailOrUsernamePlaceholder')}
                 className="w-full px-4 py-3 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
                 required
                 autoComplete="username"
@@ -65,7 +67,7 @@ export default function Login() {
 
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
-                Password
+                {t('auth.login.passwordLabel')}
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-secondary" />
@@ -73,7 +75,7 @@ export default function Login() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
+                  placeholder={t('auth.login.passwordPlaceholder')}
                   className="w-full pl-10 pr-4 py-3 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
                   required
                   autoComplete="current-password"
@@ -90,7 +92,7 @@ export default function Login() {
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <span>
-                  Sign In <ArrowRight className="w-5 h-5 inline" />
+                  {t('auth.login.signInButton')} <ArrowRight className="w-5 h-5 inline" />
                 </span>
               )}
             </button>
@@ -100,13 +102,13 @@ export default function Login() {
         </div>
 
         <p className="text-center text-text-secondary text-sm mt-6">
-          Don&apos;t have an account?{' '}
+          {t('auth.login.registerPrompt')}{' '}
           <button
             type="button"
             onClick={() => navigate('/register')}
             className="text-primary hover:underline"
           >
-            Register with email
+            {t('auth.login.registerButton')}
           </button>
         </p>
       </div>

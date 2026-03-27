@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import type { Chat, ChatMember, Message } from '../types';
 import { api } from '../services/api';
+import { DICT, type I18nKey } from '../i18n/dictionary';
+import { DEFAULT_LANG, type LangCode } from '../i18n/languages';
+import { useLanguageStore } from './languageStore';
+
+function t(key: I18nKey): string {
+  const cur = (useLanguageStore.getState().language ?? DEFAULT_LANG) as LangCode;
+  if (cur === 'ru') return DICT.ru?.[key] ?? DICT.en?.[key] ?? key;
+  return DICT[cur]?.[key] ?? DICT.en?.[key] ?? key;
+}
 
 interface ChatState {
   chats: Chat[];
@@ -92,7 +101,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ chats, isLoading: false });
     } catch (error) {
       console.error('Fetch chats error:', error);
-      set({ error: 'Failed to load chats', isLoading: false });
+      set({ error: t('chat.store.failedToLoadChats'), isLoading: false });
     }
   },
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parse } from '@twemoji/parser';
+import { useI18n } from '../i18n/useI18n';
 
 const emojiUrlCache = new Map<string, string>();
 const RECENT_KEY = 'truble-bubble-recent-emojis';
@@ -73,9 +74,9 @@ function emojiMatchesQuery(emoji: string, query: string): boolean {
   return kws.some((k) => k.includes(q));
 }
 
-const EMOJI_GROUPS: { label: string; chars: string[] }[] = [
+const EMOJI_GROUPS: { labelKey: string; chars: string[] }[] = [
   {
-    label: 'Смайлы',
+    labelKey: 'emoji.group.smiles',
     chars: [
       '😀',
       '😃',
@@ -132,31 +133,31 @@ const EMOJI_GROUPS: { label: string; chars: string[] }[] = [
     ],
   },
   {
-    label: 'Жесты',
+    labelKey: 'emoji.group.gestures',
     chars: ['👍', '👎', '👌', '🤌', '✌️', '🤞', '🤝', '🙏', '👏', '🙌', '👋', '💪', '🤷', '🤦', '🫶', '🫰', '🖐️', '✋', '🤟', '☝️'],
   },
   {
-    label: 'Сердца',
+    labelKey: 'emoji.group.hearts',
     chars: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟'],
   },
   {
-    label: 'Разное',
+    labelKey: 'emoji.group.misc',
     chars: ['🔥', '✨', '⭐', '🌟', '🎉', '🎊', '💯', '✅', '❌', '⚠️', '📌', '💬', '👀', '🤖', '💡', '🎵', '🎶', '🎮', '🏆', '🚀'],
   },
   {
-    label: 'Животные',
+    labelKey: 'emoji.group.animals',
     chars: ['🐶', '🐱', '🦊', '🐼', '🐻', '🦁', '🐯', '🐸', '🐵', '🐧', '🐤', '🦄', '🐙', '🐬', '🦋'],
   },
   {
-    label: 'Еда',
+    labelKey: 'emoji.group.food',
     chars: ['🍏', '🍓', '🍒', '🍉', '🍕', '🍔', '🌮', '🍜', '🍣', '🍪', '🍩', '🍫', '☕', '🍵', '🥤'],
   },
   {
-    label: 'Флаги',
+    labelKey: 'emoji.group.flags',
     chars: ['🇺🇦', '🇷🇺', '🇺🇸', '🇬🇧', '🇩🇪', '🇫🇷', '🇮🇹', '🇪🇸', '🇵🇱', '🇯🇵', '🇰🇷', '🇨🇳'],
   },
   {
-    label: 'Капельки (trublebubble)',
+    labelKey: 'emoji.group.drops',
     // Набор «красных капелек» (базовые кровяные/красные капли + символы).
     chars: ['🩸', '🩹', '🩺', '🩻', '🩼', '💧', '🔴', '🟥', '❤️', '💗'],
   },
@@ -173,6 +174,7 @@ export default function EmojiPicker({ open, onClose, onPick, anchorRef }: Props)
   const panelRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState('');
   const [recent, setRecent] = useState<string[]>([]);
+  const { t } = useI18n();
 
   useEffect(() => {
     if (!open) return;
@@ -193,15 +195,16 @@ export default function EmojiPicker({ open, onClose, onPick, anchorRef }: Props)
   const groups = useMemo(() => {
     const q = query.trim();
     const base = EMOJI_GROUPS.map((g) => ({
-      label: g.label,
+      labelKey: g.labelKey,
+      label: t(g.labelKey as any),
       chars: q ? g.chars.filter((e) => emojiMatchesQuery(e, q)) : g.chars,
     })).filter((g) => g.chars.length > 0);
 
     if (!q && recent.length > 0) {
-      return [{ label: 'Недавние', chars: recent }, ...base];
+      return [{ labelKey: 'emoji.recent', label: t('emoji.recent'), chars: recent }, ...base];
     }
     return base;
-  }, [query, recent]);
+  }, [query, recent, t]);
 
   const pick = (ch: string) => {
     pushRecent(ch);
@@ -213,21 +216,21 @@ export default function EmojiPicker({ open, onClose, onPick, anchorRef }: Props)
   return (
     <div
       ref={panelRef}
-      className="absolute bottom-full right-0 mb-2 w-[min(100vw-2rem,320px)] max-h-[min(55vh,320px)] overflow-y-auto rounded-xl border border-background-light bg-background-medium shadow-2xl z-[80] p-2 animate-scale-in"
+      className="absolute bottom-full right-0 mb-2 w-[min(100vw-2rem,320px)] max-h-[min(55vh,320px)] overflow-y-auto rounded-xl border border-background-light bg-background-medium shadow-2xl z-[300] p-2 animate-scale-in"
       role="listbox"
-      aria-label="Эмодзи"
+      aria-label={t('emoji.title')}
     >
       <div className="sticky top-0 bg-background-medium pb-2 z-10">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Поиск эмодзи…"
+          placeholder={t('emoji.searchPlaceholder')}
           className="w-full px-3 py-2 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors text-sm"
         />
       </div>
 
       {groups.map((g) => (
-        <div key={g.label} className="mb-2 last:mb-0">
+        <div key={g.labelKey} className="mb-2 last:mb-0">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary px-1 mb-1">
             {g.label}
           </p>

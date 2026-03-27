@@ -3,6 +3,15 @@ import type { Message } from '../types';
 import type { ReceiptState } from '../utils/messageReceipt';
 import { api } from '../services/api';
 import { socket } from '../services/socket';
+import { DICT, type I18nKey } from '../i18n/dictionary';
+import { DEFAULT_LANG, type LangCode } from '../i18n/languages';
+import { useLanguageStore } from './languageStore';
+
+function t(key: I18nKey): string {
+  const cur = (useLanguageStore.getState().language ?? DEFAULT_LANG) as LangCode;
+  if (cur === 'ru') return DICT.ru?.[key] ?? DICT.en?.[key] ?? key;
+  return DICT[cur]?.[key] ?? DICT.en?.[key] ?? key;
+}
 
 interface MessageState {
   messages: Record<string, Message[]>;
@@ -103,7 +112,7 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       return messages;
     } catch (error) {
       console.error('Fetch messages error:', error);
-      set({ error: 'Failed to load messages', isLoading: false });
+      set({ error: t('chat.store.failedToLoadMessages'), isLoading: false });
       return [];
     }
   },
@@ -136,7 +145,8 @@ export const useMessageStore = create<MessageState>((set, get) => ({
   deleteMessage: async (chatId, messageId, deleteForEveryone = false) => {
     try {
       await api.delete(`/messages/${messageId}?deleteForEveryone=${deleteForEveryone}`);
-      get().updateMessage(chatId, messageId, { isDeleted: true, content: 'This message was deleted' });
+      // Keep content empty to avoid leaking any hardcoded UI strings.
+      get().updateMessage(chatId, messageId, { isDeleted: true, content: '' });
     } catch (error) {
       console.error('Delete message error:', error);
     }

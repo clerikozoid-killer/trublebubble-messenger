@@ -3,9 +3,10 @@ import { X, Search, Camera, UserPlus } from 'lucide-react';
 import { api } from '../services/api';
 import type { Chat, User } from '../types';
 import { mediaUrl } from '../utils/mediaUrl';
+import { useI18n } from '../i18n/useI18n';
 
-function memberLabel(count: number) {
-  return `${count} ${count === 1 ? 'member' : 'members'}`;
+function memberLabel(count: number, one: string, other: string) {
+  return `${count} ${count === 1 ? one : other}`;
 }
 
 export default function ChatInfoModal({
@@ -21,6 +22,7 @@ export default function ChatInfoModal({
   onOpenProfile: (userId: string) => void;
   onChatUpdated: (chat: Chat) => void;
 }) {
+  const { t } = useI18n();
   const myMembership = chat.members.find((m) => m.userId === currentUserId);
   const canManage = myMembership?.role === 'OWNER' || myMembership?.role === 'ADMIN';
   const isGroupish =
@@ -77,7 +79,7 @@ export default function ChatInfoModal({
       });
       onChatUpdated(updated);
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : 'Could not save');
+      setSaveError(e instanceof Error ? e.message : t('chatInfo.errorCouldNotSave'));
     } finally {
       setSaving(false);
     }
@@ -94,7 +96,7 @@ export default function ChatInfoModal({
       const updated = await api.updateChat(chat.id, { avatarUrl: url });
       onChatUpdated(updated);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Could not upload photo');
+      setSaveError(err instanceof Error ? err.message : t('chatInfo.errorCouldNotUploadPhoto'));
     } finally {
       setAvatarBusy(false);
     }
@@ -107,7 +109,7 @@ export default function ChatInfoModal({
       setInviteCandidates((prev) => prev.filter((u) => u.id !== userId));
       setAddSearch('');
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : 'Не удалось добавить участника');
+      setSaveError(e instanceof Error ? e.message : t('chatInfo.errorCouldNotAddMember'));
     }
   };
 
@@ -118,12 +120,12 @@ export default function ChatInfoModal({
       <div className="fixed inset-0 bg-black/50 z-[60]" onClick={onClose} aria-hidden />
       <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] w-[min(100vw-2rem,400px)] max-h-[85vh] overflow-hidden flex flex-col bg-background-medium rounded-2xl shadow-2xl border border-background-light">
         <div className="p-4 border-b border-background-light flex items-center justify-between shrink-0">
-          <h3 className="font-semibold text-text-primary">Chat info</h3>
+          <h3 className="font-semibold text-text-primary">{t('chatInfo.title')}</h3>
           <button
             type="button"
             onClick={onClose}
             className="p-2 hover:bg-background-light rounded-full"
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             <X className="w-5 h-5 text-text-secondary" />
           </button>
@@ -151,7 +153,7 @@ export default function ChatInfoModal({
                   disabled={avatarBusy}
                   onClick={() => avatarInputRef.current?.click()}
                   className="absolute -bottom-0.5 -right-0.5 w-8 h-8 bg-primary rounded-full flex items-center justify-center ring-2 ring-background-medium disabled:opacity-50"
-                  aria-label="Change group photo"
+                  aria-label={t('chatInfo.changePhoto')}
                 >
                   {avatarBusy ? (
                     <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -166,7 +168,7 @@ export default function ChatInfoModal({
                 <>
                   <div>
                     <label className="block text-xs text-text-secondary mb-1" htmlFor="chat-title">
-                      Name
+                      {t('chatInfo.name')}
                     </label>
                     <input
                       id="chat-title"
@@ -178,7 +180,7 @@ export default function ChatInfoModal({
                   </div>
                   <div>
                     <label className="block text-xs text-text-secondary mb-1" htmlFor="chat-username">
-                      Username (optional)
+                      {t('chatInfo.usernameOptional')}
                     </label>
                     <input
                       id="chat-username"
@@ -187,7 +189,7 @@ export default function ChatInfoModal({
                       onChange={(e) =>
                         setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))
                       }
-                      placeholder="public_link"
+                      placeholder={t('chatInfo.publicLinkPlaceholder')}
                       className="w-full px-3 py-2 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary text-sm"
                     />
                   </div>
@@ -197,16 +199,18 @@ export default function ChatInfoModal({
                     disabled={saving || !title.trim()}
                     className="w-full py-2 px-3 bg-primary hover:bg-primary-dark disabled:opacity-50 text-white text-sm font-medium rounded-lg"
                   >
-                    {saving ? 'Saving…' : 'Save name & username'}
+                    {saving ? t('chatInfo.saving') : t('chatInfo.saveMeta')}
                   </button>
                 </>
               ) : (
                 <div>
-                  <p className="font-semibold text-text-primary">{chat.title || 'Chat'}</p>
+                  <p className="font-semibold text-text-primary">{chat.title || t('chatInfo.chatFallbackTitle')}</p>
                   {chat.username && <p className="text-xs text-text-secondary">@{chat.username}</p>}
                 </div>
               )}
-              <p className="text-sm text-text-secondary">{memberLabel(chat.members.length)}</p>
+              <p className="text-sm text-text-secondary">
+                {memberLabel(chat.members.length, t('chat.members.one'), t('chat.members.other'))}
+              </p>
             </div>
           </div>
 
@@ -222,21 +226,21 @@ export default function ChatInfoModal({
 
           {isGroupish && canManage && (
             <div className="border-t border-background-light pt-4 space-y-2">
-              <p className="text-xs font-medium text-text-secondary uppercase">Добавить участников</p>
+              <p className="text-xs font-medium text-text-secondary uppercase">{t('chatInfo.addMembers.title')}</p>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary pointer-events-none" />
                 <input
                   type="search"
                   value={addSearch}
                   onChange={(e) => setAddSearch(e.target.value)}
-                  placeholder="Фильтр по имени или @username…"
+                  placeholder={t('chatInfo.addMembers.filterPlaceholder')}
                   className="w-full pl-9 pr-3 py-2 bg-background-light rounded-lg text-sm text-text-primary placeholder-text-secondary border border-transparent focus:border-primary"
                 />
               </div>
-              {browseLoading && <p className="text-xs text-text-secondary">Загрузка списка…</p>}
+              {browseLoading && <p className="text-xs text-text-secondary">{t('chatInfo.addMembers.loading')}</p>}
               {!browseLoading && inviteCandidates.length === 0 && (
                 <p className="text-xs text-text-secondary">
-                  Нет других пользователей в системе — зарегистрируйте коллег, чтобы добавить их в группу.
+                  {t('chatInfo.addMembers.none')}
                 </p>
               )}
               {!browseLoading && filteredInvitees.length > 0 && (
@@ -263,7 +267,7 @@ export default function ChatInfoModal({
                           className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:opacity-90"
                         >
                           <UserPlus className="w-3.5 h-3.5" />
-                          В группу
+                          +
                         </button>
                       </div>
                     </li>
@@ -274,7 +278,7 @@ export default function ChatInfoModal({
                 inviteCandidates.length > 0 &&
                 filteredInvitees.length === 0 &&
                 addSearch.trim().length > 0 && (
-                  <p className="text-xs text-text-secondary">Никого не найдено — попробуйте другой запрос.</p>
+                  <p className="text-xs text-text-secondary">{t('chatInfo.addMembers.noneFound')}</p>
                 )}
             </div>
           )}

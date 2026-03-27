@@ -2,7 +2,10 @@
  * Заглушка "робот просыпается": две руки делают пощечины.
  * Используем простую CSS-анимацию без внешних ассетов.
  */
+import { useI18n } from '../i18n/useI18n';
+
 export default function CallSlapWaking() {
+  const { t } = useI18n();
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-8">
       <div className="relative w-56 h-56">
@@ -69,7 +72,7 @@ export default function CallSlapWaking() {
       </div>
 
       <div className="text-center text-sm text-text-secondary">
-        Backend просыпается. Сейчас будет звонок…
+        {t('call.waking')}
       </div>
     </div>
   );

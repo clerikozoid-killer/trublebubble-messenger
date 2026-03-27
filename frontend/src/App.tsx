@@ -24,13 +24,14 @@ import { useI18n } from './i18n/useI18n';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore();
+  const { t } = useI18n();
 
   if (isLoading) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-background-dark">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-text-secondary text-sm">Loading...</p>
+          <p className="text-text-secondary text-sm">{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -41,13 +42,14 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore();
+  const { t } = useI18n();
 
   if (isLoading) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-background-dark">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-text-secondary text-sm">Loading...</p>
+          <p className="text-text-secondary text-sm">{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -160,12 +162,14 @@ function App() {
           <div className="w-full max-w-md bg-background-light border border-background-medium rounded-xl shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-background-medium/70">
               <div className="text-sm font-semibold text-text-primary">
-                Incoming {incomingCall.callType === 'video' ? 'video' : 'voice'} call
+                {incomingCall.callType === 'video'
+                  ? t('call.ui.incomingVideoCall')
+                  : t('call.ui.incomingVoiceCall')}
               </div>
               <button
                 type="button"
                 className="p-2 hover:bg-background-light rounded-full transition-colors"
-                aria-label="Close incoming call"
+                aria-label={t('call.ui.closeCall')}
                 onClick={rejectIncomingFromGlobalModal}
               >
                 ✕
@@ -215,7 +219,9 @@ function App() {
                   />
                 </svg>
                 <div className="text-sm">
-                  {incomingCall.callType === 'video' ? 'Connecting video call…' : 'Connecting voice call…'}
+                  {incomingCall.callType === 'video'
+                    ? t('call.ui.connectingVideoCall')
+                    : t('call.ui.connectingVoiceCall')}
                 </div>
               </div>
             </div>

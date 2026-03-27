@@ -13,9 +13,9 @@ import {
   Ban,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { ru } from 'date-fns/locale';
 import type { User as UserType } from '../types';
 import { mediaUrl } from '../utils/mediaUrl';
+import { useI18n } from '../i18n/useI18n';
 
 const BUBBLE_BOT_USERNAME = 'bubble_bot';
 
@@ -24,6 +24,7 @@ export default function Profile() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuthStore();
   const { createChat } = useChatStore();
+  const { t } = useI18n();
   const [profile, setProfile] = useState<UserType | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
@@ -76,25 +77,21 @@ export default function Profile() {
   const handleCall = () => {
     if (!profile) return;
     if (isBubbleBot) {
-      setNotice('Bubble_Bot is a demo bot — voice calls are not available.');
+      setNotice(t('profile.callUnavailableBot'));
       return;
     }
-    setNotice('Voice calls are not available in this demo build.');
+    setNotice(t('profile.callUnavailableDemo'));
   };
 
   const handleBlockUser = () => {
     if (!profile) return;
     setShowMenu(false);
     if (isBubbleBot) {
-      setNotice('This is a system demo account — you can’t block Bubble_Bot.');
+      setNotice(t('profile.blockUnavailableBot'));
       return;
     }
-    if (
-      window.confirm(
-        `Block ${profile.displayName}? In this demo, blocking is not persisted on the server.`
-      )
-    ) {
-      setNotice('Thanks — full blocking will be available in a future update.');
+    if (window.confirm(`${t('profile.blockConfirm')} (${profile.displayName})`)) {
+      setNotice(t('profile.blockThanks'));
     }
   };
 
@@ -102,12 +99,12 @@ export default function Profile() {
     if (!profile) return;
     setShowMenu(false);
     if (isBubbleBot) {
-      setNotice('Nothing to report — Bubble_Bot is an official demo bot.');
+      setNotice(t('profile.reportUnavailableBot'));
       return;
     }
-    const reason = window.prompt('Describe the issue (demo):');
+    const reason = window.prompt(t('profile.reportPrompt'));
     if (reason === null) return;
-    setNotice('Thanks — your feedback was noted (demo only).');
+    setNotice(t('profile.reportThanks'));
   };
 
   if (isLoading) {
@@ -121,7 +118,7 @@ export default function Profile() {
   if (!profile) {
     return (
       <div className="h-full flex items-center justify-center bg-background-dark">
-        <p className="text-text-secondary">User not found</p>
+        <p className="text-text-secondary">{t('profile.userNotFound')}</p>
       </div>
     );
   }
@@ -134,11 +131,11 @@ export default function Profile() {
           type="button"
           onClick={() => navigate(-1)}
           className="p-2 hover:bg-background-light rounded-full transition-colors"
-          aria-label="Back"
+          aria-label={t('common.back')}
         >
           <ArrowLeft className="w-5 h-5 text-text-secondary" />
         </button>
-        <h2 className="font-semibold text-text-primary">Profile</h2>
+        <h2 className="font-semibold text-text-primary">{t('profile.title')}</h2>
       </div>
 
       {notice && (
@@ -187,10 +184,10 @@ export default function Profile() {
           
           <p className="text-sm text-text-secondary mt-2">
             {profile.isOnline
-              ? 'Online'
+              ? t('profile.online')
               : profile.lastSeenAt
-              ? `Last seen ${format(new Date(profile.lastSeenAt), 'MMM d, yyyy HH:mm')}`
-              : 'Offline'}
+              ? `${t('profile.lastSeen')} ${format(new Date(profile.lastSeenAt), 'MMM d, yyyy HH:mm')}`
+              : t('profile.offline')}
           </p>
 
           {profile.bio && (
@@ -208,14 +205,14 @@ export default function Profile() {
                 className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark text-white font-medium rounded-lg transition-colors"
               >
                 <MessageCircle className="w-5 h-5" />
-                Message
+                {t('profile.message')}
               </button>
               <button
                 type="button"
                 onClick={handleCall}
                 className="p-3 bg-background-medium hover:bg-background-light rounded-full transition-colors"
-                aria-label="Call"
-                title="Call"
+                aria-label={t('profile.call')}
+                title={t('profile.call')}
               >
                 <Phone className="w-5 h-5 text-text-secondary" />
               </button>
@@ -237,7 +234,7 @@ export default function Profile() {
                     className="w-full px-4 py-2 text-left text-text-primary hover:bg-background-medium flex items-center gap-3 transition-colors"
                   >
                     <Ban className="w-4 h-4" />
-                    Block User
+                    {t('profile.blockUser')}
                   </button>
                   <button
                     type="button"
@@ -245,7 +242,7 @@ export default function Profile() {
                     className="w-full px-4 py-2 text-left text-text-primary hover:bg-background-medium flex items-center gap-3 transition-colors"
                   >
                     <Shield className="w-4 h-4" />
-                    Report User
+                    {t('profile.reportUser')}
                   </button>
                 </div>
               </>
@@ -259,7 +256,7 @@ export default function Profile() {
             {profile.phone && (
               <div className="p-4 text-center">
                 <p className="text-text-primary">{profile.phone}</p>
-                <p className="text-xs text-text-secondary mt-1">Phone</p>
+                <p className="text-xs text-text-secondary mt-1">{t('profile.phone')}</p>
               </div>
             )}
 
@@ -272,36 +269,36 @@ export default function Profile() {
                 >
                   @{profile.username}
                 </button>
-                <p className="text-xs text-text-secondary mt-1">Username</p>
+                <p className="text-xs text-text-secondary mt-1">{t('profile.username')}</p>
               </div>
             )}
 
             <div className="p-4 text-center">
               <p className="text-text-primary">
                 {profile.createdAt &&
-                  `В приложении с ${format(new Date(profile.createdAt), 'LLLL yyyy', { locale: ru })}`}
+                  `${t('profile.memberSince')} ${format(new Date(profile.createdAt), 'MMM yyyy')}`}
               </p>
-              <p className="text-xs text-text-secondary mt-1">Дата регистрации</p>
+              <p className="text-xs text-text-secondary mt-1">{t('profile.registrationDate')}</p>
             </div>
           </div>
         </div>
 
         {/* Shared Media */}
         <div className="mt-4 mx-4">
-          <h3 className="text-text-secondary text-sm font-medium mb-3">Shared Media</h3>
+          <h3 className="text-text-secondary text-sm font-medium mb-3">{t('profile.sharedMedia')}</h3>
           <div className="bg-background-medium rounded-2xl p-8 text-center">
-            <p className="text-text-secondary">No shared media yet</p>
+            <p className="text-text-secondary">{t('profile.noSharedMedia')}</p>
           </div>
         </div>
 
         {/* Notifications */}
         {!isOwnProfile && (
           <div className="mt-4 mx-4">
-            <h3 className="text-text-secondary text-sm font-medium mb-3">Notifications</h3>
+            <h3 className="text-text-secondary text-sm font-medium mb-3">{t('profile.notifications')}</h3>
             <div className="bg-background-medium rounded-2xl p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Bell className="w-5 h-5 text-text-secondary" />
-                <span className="text-text-primary">Notifications</span>
+                <span className="text-text-primary">{t('profile.notifications')}</span>
               </div>
               <div className="w-12 h-7 bg-primary rounded-full relative cursor-pointer">
                 <div className="absolute right-1 top-1 w-5 h-5 bg-white rounded-full transition-transform" />

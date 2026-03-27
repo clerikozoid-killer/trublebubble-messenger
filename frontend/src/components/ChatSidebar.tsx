@@ -110,11 +110,11 @@ export default function ChatSidebar() {
 
   const lastMessagePreviewText = (chat: Chat): string => {
     const lastMessage = chat.messages?.[0];
-    if (!lastMessage) return Number(chat.unreadCount) > 0 ? 'Новые сообщения' : 'Нет сообщений';
-    if (parsePollStub(lastMessage.content)) return '📊 Опрос';
-    if (parseLocationStub(lastMessage.content)) return '📍 Локация';
-    if (lastMessage.mediaUrl && !lastMessage.content?.trim()) return '[вложение]';
-    return lastMessage.content || (Number(chat.unreadCount) > 0 ? 'Новые сообщения' : 'Нет сообщений');
+    if (!lastMessage) return Number(chat.unreadCount) > 0 ? t('sidebar.newMessages') : t('sidebar.noMessages');
+    if (parsePollStub(lastMessage.content)) return t('chat.snippet.poll');
+    if (parseLocationStub(lastMessage.content)) return t('chat.snippet.location');
+    if (lastMessage.mediaUrl && !lastMessage.content?.trim()) return t('sidebar.attachment');
+    return lastMessage.content || (Number(chat.unreadCount) > 0 ? t('sidebar.newMessages') : t('sidebar.noMessages'));
   };
 
   // (dedup) removed duplicate parsePollStub/lastMessagePreviewText
@@ -249,8 +249,9 @@ export default function ChatSidebar() {
 
   const isDiscussionChat = useCallback((chat: Chat) => {
     const title = (chat.title || '').toLowerCase();
-    return title.startsWith('обсуждение');
-  }, []);
+    // Backward/forward compatible with older titles regardless of UI language.
+    return title.startsWith(t('chat.discussionPrefix').toLowerCase()) || title.startsWith('discussion');
+  }, [t]);
 
   const discussionChats = useMemo(
     () => sortedChats.filter((c) => isDiscussionChat(c)),
@@ -351,12 +352,12 @@ export default function ChatSidebar() {
 
   const handleMuteChat = (chat: Chat) => {
     setChatMute(chat.id, '8h');
-    setToast('Уведомления отключены на 8 ч.');
+    setToast(t('chatSidebar.toast.muted8h'));
     closeContext();
   };
 
   const handleDeleteRowChat = async (chat: Chat) => {
-    if (!window.confirm('Удалить этот чат?')) {
+    if (!window.confirm(t('chatSidebar.confirm.deleteChat'))) {
       closeContext();
       return;
     }
@@ -365,13 +366,13 @@ export default function ChatSidebar() {
       removeChat(chat.id);
       if (activeChatId === chat.id) navigate('/');
     } catch {
-      setToast('Не удалось удалить чат');
+      setToast(t('chatSidebar.toast.deleteFailed'));
     }
     closeContext();
   };
 
   const handleBlockUser = () => {
-    setToast('Блокировка пользователя будет в следующей версии');
+    setToast(t('chatSidebar.toast.blockSoon'));
     closeContext();
   };
 
@@ -482,7 +483,7 @@ export default function ChatSidebar() {
             type="button"
             onClick={() => navigate('/settings')}
             className="relative shrink-0 w-14 h-14 rounded-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            aria-label="Открыть настройки профиля"
+            aria-label={t('chatSidebar.profile.openSettings')}
           >
             {mediaUrl(user?.avatarUrl) && !headerAvatarFailed ? (
               <img
@@ -506,7 +507,7 @@ export default function ChatSidebar() {
             className="flex-1 min-w-0 text-left rounded-lg hover:bg-tg-rowHover/80 px-1 -mx-1 transition-colors py-0.5"
           >
             <span className="font-semibold text-text-primary truncate block">{user?.displayName}</span>
-            <span className="text-sm text-tg-link block truncate mt-0.5">online</span>
+            <span className="text-sm text-tg-link block truncate mt-0.5">{t('chatSidebar.profile.online')}</span>
           </button>
           <button
             type="button"
@@ -517,7 +518,7 @@ export default function ChatSidebar() {
             }}
             className="shrink-0 p-2 rounded-lg hover:bg-tg-rowHover text-text-secondary z-10"
             aria-expanded={sidebarMenuExpanded}
-            aria-label={sidebarMenuExpanded ? 'Свернуть меню' : 'Развернуть меню'}
+            aria-label={sidebarMenuExpanded ? t('chatSidebar.menu.collapse') : t('chatSidebar.menu.expand')}
           >
             <ChevronDown
               className={clsx(
@@ -531,7 +532,7 @@ export default function ChatSidebar() {
               type="button"
               onClick={() => setShowMenu(!showMenu)}
               className="p-2 hover:bg-tg-rowHover rounded-full transition-colors"
-              aria-label="More"
+              aria-label={t('common.more')}
             >
               <MoreVertical className="w-5 h-5 text-text-secondary" />
             </button>
@@ -555,7 +556,7 @@ export default function ChatSidebar() {
                     className="w-full px-4 py-2.5 text-left text-status-danger hover:bg-tg-rowHover flex items-center gap-3 transition-colors text-sm"
                   >
                     <LogOut className="w-4 h-4 shrink-0" />
-                    Log out
+                    {t('common.logout')}
                   </button>
                 </div>
               </>
@@ -564,25 +565,25 @@ export default function ChatSidebar() {
         </div>
 
         {sidebarMenuExpanded && (
-          <nav className="mt-3 space-y-0.5" aria-label="Main menu">
+          <nav className="mt-3 space-y-0.5" aria-label={t('sidebar.mainMenu')}>
             {[
-              { icon: UserIcon, label: 'Мой профиль', onClick: () => navigate('/settings'), disabled: false },
-              { icon: Users, label: 'Создать группу', onClick: handleCreateGroup, disabled: false },
-              { icon: Megaphone, label: 'Создать канал', onClick: handleCreateChannel, disabled: false },
+              { icon: UserIcon, label: t('chatSidebar.menu.myProfile'), onClick: () => navigate('/settings'), disabled: false },
+              { icon: Users, label: t('chatSidebar.menu.createGroup'), onClick: handleCreateGroup, disabled: false },
+              { icon: Megaphone, label: t('chatSidebar.menu.createChannel'), onClick: handleCreateChannel, disabled: false },
               {
                 icon: UserCircle,
-                label: 'Контакты',
+                label: t('chatSidebar.menu.contacts'),
                 onClick: () => setShowNewChat(true),
                 disabled: false,
               },
-              { icon: Bookmark, label: 'Избранное', onClick: () => navigate('/saved'), disabled: false },
-              { icon: Settings, label: 'Настройки', onClick: () => navigate('/settings'), disabled: false },
+              { icon: Bookmark, label: t('chatSidebar.menu.saved'), onClick: () => navigate('/saved'), disabled: false },
+              { icon: Settings, label: t('chatSidebar.menu.settings'), onClick: () => navigate('/settings'), disabled: false },
             ].map(({ icon: Icon, label, onClick, disabled }) => (
               <button
                 key={label}
                 type="button"
                 disabled={disabled}
-                title={disabled ? 'Скоро' : undefined}
+                title={disabled ? t('chatSidebar.menu.soon') : undefined}
                 onClick={() => {
                   if (disabled) return;
                   onClick();
@@ -601,7 +602,7 @@ export default function ChatSidebar() {
             <div className="mt-0.5 px-2 py-2.5 rounded-lg text-text-primary hover:bg-tg-rowHover">
               <div className="flex items-center gap-2 flex-wrap">
                 <Moon className="w-[22px] h-[22px] text-text-secondary shrink-0" />
-                <span className="text-sm whitespace-nowrap">Ночная тема</span>
+                <span className="text-sm whitespace-nowrap">{t('chatSidebar.theme.night')}</span>
                 <button
                   type="button"
                   role="switch"
@@ -627,7 +628,7 @@ export default function ChatSidebar() {
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Поиск или начать новый чат"
+            placeholder={t('chatSidebar.searchPlaceholder')}
             className="w-full pl-10 pr-4 py-2.5 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary text-sm transition-colors"
             autoComplete="off"
           />
@@ -635,10 +636,10 @@ export default function ChatSidebar() {
           {showGlobalPanel && (
             <div className="absolute left-0 right-0 top-full mt-1 max-h-[min(60vh,420px)] overflow-y-auto rounded-xl border border-background-light bg-background-medium shadow-2xl z-40 py-2 text-sm">
               <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary">
-                Чаты
+                {t('chatSidebar.section.chats')}
               </p>
               {sortedChats.length === 0 ? (
-                <p className="px-3 py-2 text-text-secondary">Нет совпадений в списке</p>
+                <p className="px-3 py-2 text-text-secondary">{t('chatSidebar.empty.noMatches')}</p>
               ) : (
                 <ul className="max-h-32 overflow-y-auto">
                   {sortedChats.slice(0, 8).map((chat) => {
@@ -663,12 +664,12 @@ export default function ChatSidebar() {
               )}
 
               <p className="px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary border-t border-background-light mt-1">
-                Люди
+                {t('chatSidebar.section.people')}
               </p>
               {searchLoading ? (
-                <p className="px-3 py-2 text-text-secondary">Поиск…</p>
+                <p className="px-3 py-2 text-text-secondary">{t('chatSidebar.empty.searching')}</p>
               ) : searchResults.length === 0 ? (
-                <p className="px-3 py-2 text-text-secondary">Нет пользователей</p>
+                <p className="px-3 py-2 text-text-secondary">{t('chatSidebar.empty.noUsers')}</p>
               ) : (
                 <ul className="max-h-40 overflow-y-auto">
                   {searchResults.slice(0, 10).map((u) => (
@@ -693,12 +694,12 @@ export default function ChatSidebar() {
               )}
 
               <p className="px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide text-text-secondary border-t border-background-light mt-1">
-                Сообщения
+                {t('chatSidebar.section.messages')}
               </p>
               {globalMsgLoading ? (
-                <p className="px-3 py-2 text-text-secondary">Поиск…</p>
+                <p className="px-3 py-2 text-text-secondary">{t('chatSidebar.empty.searching')}</p>
               ) : globalMsgResults.length === 0 ? (
-                <p className="px-3 py-2 text-text-secondary">Нет сообщений</p>
+                <p className="px-3 py-2 text-text-secondary">{t('chatSidebar.empty.noMessages')}</p>
               ) : (
                 <ul>
                   {globalMsgResults.map((m) => (
@@ -746,8 +747,8 @@ export default function ChatSidebar() {
         ) : sortedChats.length === 0 ? (
           <div className="p-8 text-center">
             <MessageCircle className="w-12 h-12 text-text-secondary mx-auto mb-3 opacity-50" />
-            <p className="text-text-secondary">Нет чатов</p>
-            <p className="text-text-secondary text-sm mt-1">Начните новый разговор</p>
+            <p className="text-text-secondary">{t('chatSidebar.empty.noChats')}</p>
+            <p className="text-text-secondary text-sm mt-1">{t('chatSidebar.empty.startNew')}</p>
           </div>
         ) : (
           <div className="divide-y divide-background-light">
@@ -774,7 +775,7 @@ export default function ChatSidebar() {
           className="w-full py-2.5 px-4 border border-background-light hover:bg-tg-rowHover text-text-primary font-medium rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
         >
           <Plus className="w-5 h-5 text-primary" />
-          Новое сообщение
+          {t('chatSidebar.newMessage')}
         </button>
       </div>
 
@@ -809,7 +810,7 @@ export default function ChatSidebar() {
               onClick={() => handleMuteChat(contextMenu.chat)}
             >
               <BellOff className="w-4 h-4" />
-              Без звука 8 ч.
+              {t('chatSidebar.context.mute8h')}
             </button>
             <button
               type="button"
@@ -817,7 +818,7 @@ export default function ChatSidebar() {
               onClick={() => void handleDeleteRowChat(contextMenu.chat)}
             >
               <Trash2 className="w-4 h-4" />
-              Удалить чат
+              {t('chatSidebar.context.deleteChat')}
             </button>
             {contextMenu.chat.type === 'PRIVATE' && privatePeerId(contextMenu.chat) && (
               <button
@@ -826,7 +827,7 @@ export default function ChatSidebar() {
                 onClick={() => handleBlockUser()}
               >
                 <Ban className="w-4 h-4" />
-                Заблокировать
+                {t('chatSidebar.context.block')}
               </button>
             )}
           </div>
@@ -837,7 +838,7 @@ export default function ChatSidebar() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 md:left-0 md:right-auto md:w-80 lg:w-96">
           <div className="w-full max-w-md bg-background-medium rounded-2xl shadow-2xl animate-scale-in max-h-[90vh] overflow-hidden flex flex-col">
             <div className="p-4 border-b border-background-light flex items-center justify-between shrink-0">
-              <h3 className="text-lg font-semibold text-text-primary">Новое сообщение</h3>
+              <h3 className="text-lg font-semibold text-text-primary">{t('chatSidebar.modal.newMessageTitle')}</h3>
               <button
                 type="button"
                 onClick={() => {
@@ -857,7 +858,7 @@ export default function ChatSidebar() {
                   type="text"
                   value={modalQuery}
                   onChange={(e) => setModalQuery(e.target.value)}
-                  placeholder="Поиск по имени пользователя…"
+                  placeholder={t('chatSidebar.modal.searchUserPlaceholder')}
                   className="w-full pl-10 pr-4 py-2.5 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary text-sm transition-colors"
                   autoFocus
                 />
@@ -910,18 +911,18 @@ export default function ChatSidebar() {
                             )}
                           </div>
                           {result.isOnline && (
-                            <span className="shrink-0 text-xs text-status-online">online</span>
+                            <span className="shrink-0 text-xs text-status-online">{t('chatSidebar.online')}</span>
                           )}
                         </button>
                       ))}
                     </div>
                   ) : modalContacts.length === 0 ? (
                     <p className="text-center text-text-secondary text-sm py-6">
-                      Нет других пользователей для переписки.
+                      {t('chatSidebar.modal.noOtherUsers')}
                     </p>
                   ) : (
                     <p className="text-center text-text-secondary text-sm py-6">
-                      Никого не найдено по запросу.
+                      {t('chatSidebar.modal.noOneFound')}
                     </p>
                   )}
                   <button
@@ -932,7 +933,7 @@ export default function ChatSidebar() {
                     <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
                       <Users className="w-5 h-5 text-primary" />
                     </div>
-                    <span className="font-medium text-text-primary">Создать группу</span>
+                    <span className="font-medium text-text-primary">{t('chatSidebar.modal.createGroup')}</span>
                   </button>
                 </>
               )}

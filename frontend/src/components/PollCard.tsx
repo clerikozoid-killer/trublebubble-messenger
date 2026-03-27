@@ -100,7 +100,7 @@ export default function PollCard({
             draggable={false}
           />
           {summary.mediaCaption && (
-            <div className="px-3 py-2 text-xs text-text-secondary bg-background-dark/10">
+            <div className="px-3 py-2 text-xs text-text-primary bg-background-dark/10">
               {summary.mediaCaption}
             </div>
           )}

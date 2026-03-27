@@ -5,10 +5,12 @@ import { api } from '../services/api';
 import type { User as AppUser } from '../types';
 import { User, Lock, Mail, ArrowRight } from 'lucide-react';
 import { BubbleLogo } from '../components/BubbleLogo';
+import { useI18n } from '../i18n/useI18n';
 
 export default function Register() {
   const navigate = useNavigate();
   const { setAuth, setUser } = useAuthStore();
+  const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -22,12 +24,12 @@ export default function Register() {
     setError('');
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError(t('auth.register.errorPasswordsDoNotMatch'));
       return;
     }
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError(t('auth.register.errorPasswordTooShort'));
       return;
     }
 
@@ -49,7 +51,7 @@ export default function Register() {
       }
       navigate('/');
     } catch {
-      setError('Email or username already taken, or registration failed');
+      setError(t('auth.register.errorRegistrationFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -62,21 +64,21 @@ export default function Register() {
           <div className="flex justify-center mb-4">
             <BubbleLogo variant="wordmark" size="lg" />
           </div>
-          <h1 className="text-2xl font-bold text-text-primary">Create Account</h1>
-          <p className="text-text-secondary mt-2">Join TrubleBubble with your email</p>
+          <h1 className="text-2xl font-bold text-text-primary">{t('auth.register.title')}</h1>
+          <p className="text-text-secondary mt-2">{t('auth.register.joinHint')}</p>
         </div>
 
         <div className="bg-background-medium rounded-2xl p-6 shadow-xl">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">Email</label>
+              <label className="block text-sm font-medium text-text-secondary mb-2">{t('auth.register.emailLabel')}</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-secondary" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
+                  placeholder={t('auth.register.emailPlaceholder')}
                   className="w-full pl-10 pr-4 py-3 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
                   required
                   autoComplete="email"
@@ -86,7 +88,7 @@ export default function Register() {
 
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
-                Display Name
+                {t('auth.register.displayNameLabel')}
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-secondary" />
@@ -94,7 +96,7 @@ export default function Register() {
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Your name"
+                  placeholder={t('auth.register.displayNamePlaceholder')}
                   className="w-full pl-10 pr-4 py-3 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
                   required
                 />
@@ -103,7 +105,7 @@ export default function Register() {
 
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
-                Username <span className="text-text-secondary font-normal">(optional)</span>
+                {t('auth.register.usernameLabel')} <span className="text-text-secondary font-normal">{t('auth.common.optional')}</span>
               </label>
               <input
                 type="text"
@@ -111,21 +113,21 @@ export default function Register() {
                 onChange={(e) =>
                   setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))
                 }
-                placeholder="johndoe"
+                placeholder={t('auth.register.usernamePlaceholder')}
                 className="w-full px-4 py-3 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
               />
-              <p className="text-text-secondary text-xs mt-1">Letters, numbers, underscores only</p>
+              <p className="text-text-secondary text-xs mt-1">{t('auth.register.usernameHint')}</p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">Password</label>
+              <label className="block text-sm font-medium text-text-secondary mb-2">{t('auth.register.passwordLabel')}</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-secondary" />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 6 characters"
+                  placeholder={t('auth.register.passwordPlaceholder')}
                   className="w-full pl-10 pr-4 py-3 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
                   required
                   minLength={6}
@@ -136,7 +138,7 @@ export default function Register() {
 
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-2">
-                Confirm Password
+                {t('auth.register.confirmPasswordLabel')}
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-secondary" />
@@ -144,7 +146,7 @@ export default function Register() {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repeat your password"
+                  placeholder={t('auth.register.confirmPasswordPlaceholder')}
                   className="w-full pl-10 pr-4 py-3 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
                   required
                   minLength={6}
@@ -162,7 +164,7 @@ export default function Register() {
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <span>
-                  Create Account <ArrowRight className="w-5 h-5 inline" />
+                  {t('auth.register.createButton')} <ArrowRight className="w-5 h-5 inline" />
                 </span>
               )}
             </button>
@@ -172,13 +174,13 @@ export default function Register() {
         </div>
 
         <p className="text-center text-text-secondary text-sm mt-6">
-          Already have an account?{' '}
+          {t('auth.register.alreadyHaveAccountPrompt')}{' '}
           <button
             type="button"
             onClick={() => navigate('/login')}
             className="text-primary hover:underline"
           >
-            Sign in
+            {t('auth.register.signInButton')}
           </button>
         </p>
       </div>

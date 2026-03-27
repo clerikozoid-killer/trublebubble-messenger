@@ -97,6 +97,57 @@ export const setupSocketHandlers = (io: Server) => {
       console.log(`User ${userId} left chat ${chatId}`);
     });
 
+    // Realtime message animations (synchronized, multi-instance safe via instanceId)
+    socket.on(
+      'message_animation',
+      async (data: {
+        chatId: string;
+        messageId: string;
+        action: 'start' | 'stop' | 'stop_all';
+        instanceId: string;
+        preset?: 'glow' | 'bounce' | 'roll';
+        intensity?: 'low' | 'med' | 'high';
+        seed?: number;
+        durationMs?: number;
+      }) => {
+        try {
+          const { chatId, messageId, action, instanceId } = data;
+          if (!chatId || !messageId || !action || !instanceId) return;
+
+          const membership = await prisma.chatMember.findUnique({
+            where: { chatId_userId: { chatId, userId } },
+          });
+          if (!membership) return;
+
+          const msg = await prisma.message.findUnique({
+            where: { id: messageId },
+            select: { id: true, chatId: true, contentType: true, mediaUrl: true, isDeleted: true },
+          });
+          if (!msg || msg.chatId !== chatId) return;
+          if (msg.isDeleted) return;
+          if (msg.contentType !== ContentType.IMAGE) return;
+          if (!msg.mediaUrl) return;
+
+          socket.join(`chat:${chatId}`);
+
+          io.to(`chat:${chatId}`).emit('message_animation', {
+            chatId,
+            messageId,
+            action,
+            instanceId,
+            preset: data.preset,
+            intensity: data.intensity,
+            seed: data.seed,
+            durationMs: data.durationMs,
+            fromUserId: userId,
+            serverTs: Date.now(),
+          });
+        } catch (e) {
+          console.error('message_animation error:', e);
+        }
+      }
+    );
+
     // Handle sending messages
     socket.on('send_message', async (data: {
       chatId: string;
@@ -617,7 +668,7 @@ export const setupSocketHandlers = (io: Server) => {
 
         await prisma.message.update({
           where: { id: messageId },
-          data: { isDeleted: true, content: 'This message was deleted' },
+          data: { isDeleted: true, content: '' },
         });
 
         io.to(`chat:${message.chatId}`).emit('message_deleted', {

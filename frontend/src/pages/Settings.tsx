@@ -92,7 +92,7 @@ export default function Settings() {
       const updated = await api.uploadAvatar(file);
       setUser(updated);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Could not upload photo');
+      setSaveError(err instanceof Error ? err.message : t('settings.profile.uploadPhotoFailed'));
     } finally {
       setAvatarUploading(false);
     }
@@ -166,7 +166,7 @@ export default function Settings() {
       ],
     },
     {
-      title: 'App',
+      title: t('settings.group.app'),
       items: [
         { icon: Bell, label: t('settings.menu.notifications'), action: () => setActiveTab('notifications') },
         { icon: Palette, label: t('settings.menu.appearance'), action: () => setActiveTab('appearance') },
@@ -189,7 +189,7 @@ export default function Settings() {
             else setActiveTab('menu');
           }}
           className="p-2 hover:bg-background-light rounded-full transition-colors"
-          aria-label="Back"
+          aria-label={t('common.back')}
         >
           <ArrowLeft className="w-5 h-5 text-text-secondary" />
         </button>
@@ -286,13 +286,13 @@ export default function Settings() {
                     </span>
                   </button>
                   <p className="text-text-secondary text-sm mt-3">
-                    Tap the photo to upload (JPEG, PNG, GIF, WebP — max 2 MB)
+                    {t('settings.profile.tapToUpload')}
                   </p>
                 </div>
 
                 <div>
                   <label className="block text-sm text-text-secondary mb-2" htmlFor="displayName">
-                    Display Name
+                    {t('settings.profile.displayNameLabel')}
                   </label>
                   <input
                     id="displayName"
@@ -306,7 +306,7 @@ export default function Settings() {
 
                 <div>
                   <label className="block text-sm text-text-secondary mb-2" htmlFor="username">
-                    Username
+                    {t('settings.profile.usernameLabel')}
                   </label>
                   <input
                     id="username"
@@ -319,19 +319,22 @@ export default function Settings() {
                     data-testid="settings-username"
                   />
                   <p className="text-text-secondary text-xs mt-1">
-                    @{username || 'username'} — public username in TrubleBubble
+                    {t('settings.profile.publicUsernameHint').replace(
+                      '{username}',
+                      username || t('settings.profile.usernameFallback')
+                    )}
                   </p>
                 </div>
 
                 <div>
                   <label className="block text-sm text-text-secondary mb-2" htmlFor="bio">
-                    Bio
+                    {t('settings.profile.bioLabel')}
                   </label>
                   <textarea
                     id="bio"
                     value={bio}
                     onChange={(e) => setBio(e.target.value.slice(0, 70))}
-                    placeholder="Write something about yourself..."
+                    placeholder={t('settings.profile.bioPlaceholder')}
                     rows={3}
                     className="w-full px-4 py-3 bg-background-medium rounded-xl border border-background-light focus:border-primary focus:ring-1 focus:ring-primary text-text-primary placeholder-text-secondary resize-none transition-colors"
                     data-testid="settings-bio"
@@ -346,7 +349,7 @@ export default function Settings() {
                 )}
                 {saveSuccess && (
                   <p className="text-status-online text-sm text-center" data-testid="save-success">
-                    Profile saved
+                    {t('settings.profile.profileSaved')}
                   </p>
                 )}
 
@@ -360,7 +363,7 @@ export default function Settings() {
                   {isSaving ? (
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   ) : (
-                    'Save changes'
+                    t('settings.profile.saveChanges')
                   )}
                 </button>
               </div>
@@ -374,12 +377,10 @@ export default function Settings() {
               className="flex items-center gap-2 text-text-secondary hover:text-text-primary"
             >
               <ArrowLeft className="w-5 h-5" />
-              Back
+              {t('common.back')}
             </button>
-            <h2 className="text-xl font-semibold text-text-primary">Appearance</h2>
-            <p className="text-sm text-text-secondary">
-              Theme: dark, light, or follow the system setting.
-            </p>
+            <h2 className="text-xl font-semibold text-text-primary">{t('settings.appearance.title')}</h2>
+            <p className="text-sm text-text-secondary">{t('settings.appearance.subtitle')}</p>
             <div className="flex flex-col gap-2">
               {(['dark', 'light', 'system'] as const).map((t) => (
                 <button
@@ -411,24 +412,22 @@ export default function Settings() {
               className="flex items-center gap-2 text-text-secondary hover:text-text-primary"
             >
               <ArrowLeft className="w-5 h-5" />
-              Back
+              {t('common.back')}
             </button>
             <h2 className="text-xl font-semibold text-text-primary">
-              {activeTab === 'privacy' && 'Privacy & Security'}
-              {activeTab === 'notifications' && 'Notifications'}
+              {activeTab === 'privacy' && t('settings.privacySecurity.title')}
+              {activeTab === 'notifications' && t('settings.notifications.title')}
           {activeTab === 'language' && t('settings.language.title')}
             </h2>
             {activeTab === 'notifications' ? (
               <div className="space-y-4">
-                <h3 className="text-base font-semibold text-text-primary">Sounds</h3>
-                <p className="text-sm text-text-secondary">
-                  Проигрывать случайные звуки при входящих сообщениях (выстрел / попадание / «Эй!»).
-                </p>
+                <h3 className="text-base font-semibold text-text-primary">{t('settings.notifications.sounds.title')}</h3>
+                <p className="text-sm text-text-secondary">{t('settings.notifications.sounds.description')}</p>
 
                 <div className="flex items-center justify-between gap-4 bg-background-medium p-4 rounded-xl border border-background-light/50">
                   <div>
-                    <p className="text-sm font-medium text-text-primary">Включить звуки</p>
-                    <p className="text-xs text-text-secondary mt-1">Можно отключить в любой момент.</p>
+                    <p className="text-sm font-medium text-text-primary">{t('settings.notifications.sounds.enableLabel')}</p>
+                    <p className="text-xs text-text-secondary mt-1">{t('settings.notifications.sounds.disableHint')}</p>
                   </div>
                   <button
                     type="button"
@@ -451,7 +450,7 @@ export default function Settings() {
 
                 <div className="bg-background-medium p-4 rounded-xl border border-background-light/50 space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-text-primary">Громкость</p>
+                    <p className="text-sm font-medium text-text-primary">{t('settings.notifications.sounds.volumeLabel')}</p>
                     <p className="text-xs text-text-secondary">{Math.round(soundVolume * 100)}%</p>
                   </div>
                   <input
@@ -475,14 +474,12 @@ export default function Settings() {
                       }}
                       className="px-4 py-2 rounded-lg bg-primary text-white text-sm hover:bg-primary-dark transition-colors"
                     >
-                      Test sound
+                      {t('settings.notifications.sounds.test')}
                     </button>
                   </div>
                 </div>
 
-                <p className="text-xs text-text-secondary">
-                  Совет: скачай MP3/WAV (например из разделов «пули»), положи в <span className="font-mono">frontend/public/sounds</span> как <span className="font-mono">hey.mp3</span>, <span className="font-mono">shot.mp3</span>, <span className="font-mono">hit.mp3</span>.
-                </p>
+                <p className="text-xs text-text-secondary">{t('settings.notifications.sounds.tip')}</p>
               </div>
             ) : activeTab === 'language' ? (
               <div className="space-y-4">
@@ -502,7 +499,9 @@ export default function Settings() {
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <span className="text-text-primary font-medium">{l.label}</span>
+                        <span className="text-text-primary font-medium">
+                          {t(`language.name.${l.code}` as any)}
+                        </span>
                         {language === l.code && (
                           <span className="text-text-secondary text-sm">✓</span>
                         )}
@@ -512,7 +511,7 @@ export default function Settings() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-text-secondary">No extra options here yet.</p>
+              <p className="text-sm text-text-secondary">{t('settings.menu.noExtraOptions')}</p>
             )}
           </div>
         ) : null}
@@ -524,6 +523,7 @@ export default function Settings() {
 function CreateGroup({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();
   const { createChat } = useChatStore();
+  const { t } = useI18n();
   const [title, setTitle] = useState('');
   const [username, setUsername] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -539,7 +539,7 @@ function CreateGroup({ onBack }: { onBack: () => void }) {
       onBack();
       navigate(`/chat/${chat.id}`, { replace: true });
     } catch {
-      setError('Could not create group');
+      setError(t('settings.createGroup.errorCouldNotCreate'));
     } finally {
       setIsCreating(false);
     }
@@ -553,21 +553,21 @@ function CreateGroup({ onBack }: { onBack: () => void }) {
         className="flex items-center gap-2 text-text-secondary hover:text-text-primary"
       >
         <ArrowLeft className="w-5 h-5" />
-        Back
+        {t('common.back')}
       </button>
 
-      <h2 className="text-xl font-semibold text-text-primary">Create group</h2>
+      <h2 className="text-xl font-semibold text-text-primary">{t('settings.createGroup.title')}</h2>
 
       <div>
         <label className="block text-sm text-text-secondary mb-2" htmlFor="group-title">
-          Group name
+          {t('settings.createGroup.nameLabel')}
         </label>
         <input
           id="group-title"
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Enter group name"
+          placeholder={t('settings.createGroup.namePlaceholder')}
           className="w-full px-4 py-3 bg-background-medium rounded-xl border border-background-light focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
           data-testid="group-title-input"
         />
@@ -575,14 +575,14 @@ function CreateGroup({ onBack }: { onBack: () => void }) {
 
       <div>
         <label className="block text-sm text-text-secondary mb-2" htmlFor="group-username">
-          Group username (optional)
+          {t('settings.createGroup.usernameOptionalLabel')}
         </label>
         <input
           id="group-username"
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-          placeholder="unique_username"
+          placeholder={t('settings.createGroup.usernamePlaceholder')}
           className="w-full px-4 py-3 bg-background-medium rounded-xl border border-background-light focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
           data-testid="group-username-input"
         />
@@ -600,7 +600,7 @@ function CreateGroup({ onBack }: { onBack: () => void }) {
         {isCreating ? (
           <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
         ) : (
-          'Create group'
+          t('settings.createGroup.submit')
         )}
       </button>
     </div>
@@ -610,6 +610,7 @@ function CreateGroup({ onBack }: { onBack: () => void }) {
 function CreateChannel({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();
   const { createChat } = useChatStore();
+  const { t } = useI18n();
   const [title, setTitle] = useState('');
   const [username, setUsername] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -625,7 +626,7 @@ function CreateChannel({ onBack }: { onBack: () => void }) {
       onBack();
       navigate(`/chat/${chat.id}`, { replace: true });
     } catch {
-      setError('Could not create channel');
+      setError(t('settings.createChannel.errorCouldNotCreate'));
     } finally {
       setIsCreating(false);
     }
@@ -639,35 +640,35 @@ function CreateChannel({ onBack }: { onBack: () => void }) {
         className="flex items-center gap-2 text-text-secondary hover:text-text-primary"
       >
         <ArrowLeft className="w-5 h-5" />
-        Back
+        {t('common.back')}
       </button>
 
-      <h2 className="text-xl font-semibold text-text-primary">Create channel</h2>
+      <h2 className="text-xl font-semibold text-text-primary">{t('settings.createChannel.title')}</h2>
 
       <div>
         <label className="block text-sm text-text-secondary mb-2" htmlFor="channel-title">
-          Channel name
+          {t('settings.createChannel.nameLabel')}
         </label>
         <input
           id="channel-title"
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Enter channel name"
+          placeholder={t('settings.createChannel.namePlaceholder')}
           className="w-full px-4 py-3 bg-background-medium rounded-xl border border-background-light focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
         />
       </div>
 
       <div>
         <label className="block text-sm text-text-secondary mb-2" htmlFor="channel-username">
-          Channel username (optional)
+          {t('settings.createChannel.usernameOptionalLabel')}
         </label>
         <input
           id="channel-username"
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-          placeholder="unique_username"
+          placeholder={t('settings.createChannel.usernamePlaceholder')}
           className="w-full px-4 py-3 bg-background-medium rounded-xl border border-background-light focus:border-primary text-text-primary placeholder-text-secondary transition-colors"
         />
       </div>
@@ -683,7 +684,7 @@ function CreateChannel({ onBack }: { onBack: () => void }) {
         {isCreating ? (
           <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
         ) : (
-          'Create channel'
+          t('settings.createChannel.submit')
         )}
       </button>
     </div>

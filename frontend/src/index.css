@@ -170,3 +170,43 @@ html {
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
+
+/* Drawing message animations (multi-instance safe) */
+@keyframes drawGlowPulse {
+  0% { opacity: 0.25; transform: scale(0.98); }
+  50% { opacity: 0.55; transform: scale(1.02); }
+  100% { opacity: 0.25; transform: scale(0.98); }
+}
+
+@keyframes drawBounceDrift {
+  0% { transform: translate(var(--dx1, 0px), var(--dy1, 0px)) rotate(-1deg); }
+  25% { transform: translate(var(--dx2, 6px), var(--dy2, -6px)) rotate(1deg); }
+  50% { transform: translate(var(--dx3, -6px), var(--dy3, 6px)) rotate(-1deg); }
+  75% { transform: translate(var(--dx4, 4px), var(--dy4, 8px)) rotate(1deg); }
+  100% { transform: translate(var(--dx1, 0px), var(--dy1, 0px)) rotate(-1deg); }
+}
+
+@keyframes drawRoll {
+  0% { transform: translateX(var(--rollFrom, -10px)) rotate(0deg); }
+  100% { transform: translateX(var(--rollTo, 10px)) rotate(360deg); }
+}
+
+.draw-anim-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 0.5rem;
+}
+
+.draw-anim-glow {
+  animation: drawGlowPulse 1200ms ease-in-out infinite;
+  filter: drop-shadow(0 0 10px rgba(255, 43, 94, 0.35));
+}
+
+.draw-anim-bounce {
+  animation: drawBounceDrift 1600ms ease-in-out infinite;
+}
+
+.draw-anim-roll {
+  animation: drawRoll 1400ms linear infinite;
+}

@@ -11,10 +11,11 @@ export function useI18n() {
     (key: I18nKey) => {
       const cur: LangCode = language ?? DEFAULT_LANG;
       // Fallback order:
-      // 1) currently selected language
-      // 2) English (so translations "work" even when other langs miss keys)
-      // 3) Russian (final)
-      return DICT[cur]?.[key] ?? DICT.en?.[key] ?? DICT.ru[key] ?? key;
+      // - For Russian UI: ru -> en -> key
+      // - For other UIs: selected -> en -> key
+      // This avoids mixing Russian and English when the selected language has partial coverage.
+      if (cur === 'ru') return DICT.ru?.[key] ?? DICT.en?.[key] ?? key;
+      return DICT[cur]?.[key] ?? DICT.en?.[key] ?? key;
     },
     [language]
   );

@@ -26,8 +26,8 @@ export default function DrawMessageModal({
       const ctx = c.getContext('2d');
       if (!ctx) return;
       ctx.save();
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(0, 0, c.width, c.height);
+      // Keep the exported PNG transparent (no black square background in chat).
+      ctx.clearRect(0, 0, c.width, c.height);
       ctx.restore();
     },
     []
@@ -69,7 +69,7 @@ export default function DrawMessageModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[190] bg-black/60 flex items-end sm:items-center justify-center p-4">
+    <div className="fixed inset-0 z-[300] bg-black/60 flex items-end sm:items-center justify-center p-4">
       <div className="w-full max-w-md rounded-2xl bg-background-medium border border-background-light shadow-2xl overflow-hidden animate-scale-in">
         <div className="px-4 py-3 border-b border-background-light/70 flex items-center justify-between gap-3">
           <div className="text-sm font-semibold text-text-primary flex items-center gap-2">
@@ -80,7 +80,7 @@ export default function DrawMessageModal({
             type="button"
             className="p-1.5 hover:bg-background-light rounded-full transition-colors"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             <X className="w-4 h-4 text-text-secondary" />
           </button>
@@ -142,7 +142,7 @@ export default function DrawMessageModal({
                   key={c}
                   type="button"
                   onClick={() => setColor(c)}
-                  aria-label={`Color ${c}`}
+                  aria-label={t('draw.colorAria').replace('{color}', c)}
                   className={[
                     'w-7 h-7 rounded-full border transition-colors',
                     c === color ? 'border-white ring-2 ring-white/30' : 'border-background-light',

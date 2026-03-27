@@ -37,6 +37,7 @@ import {
   FolderOpen,
   Bookmark,
   BarChart3,
+  Sparkles,
 } from 'lucide-react';
 import { isToday, isYesterday, format } from 'date-fns';
 import type { Message, User } from '../types';
@@ -61,8 +62,8 @@ import { translateText } from '../utils/translateText';
 import { useLanguageStore } from '../stores/languageStore';
 import type { LangCode } from '../i18n/languages';
 
-function memberLabel(count: number) {
-  return `${count} ${count === 1 ? 'member' : 'members'}`;
+function memberLabel(count: number, one: string, other: string) {
+  return `${count} ${count === 1 ? one : other}`;
 }
 
 type PendingAttachment = { id: string; file: File; previewUrl: string };
@@ -129,40 +130,40 @@ const UI_LANG_TO_SPEECH_LOCALE: Record<LangCode, SpeechLocale> = {
   tlh: 'en-US',
 };
 
-const SPEECH_LOCALE_OPTIONS: Array<{ value: SpeechLocale; label: string }> = [
-  { value: 'ru-RU', label: 'Russian (ru-RU)' },
-  { value: 'en-US', label: 'English (en-US)' },
-  { value: 'zh-CN', label: 'Chinese (zh-CN)' },
-  { value: 'ja-JP', label: 'Japanese (ja-JP)' },
-  { value: 'sr-RS', label: 'Serbian (sr-RS)' },
-  { value: 'de-DE', label: 'German (de-DE)' },
-  { value: 'fr-FR', label: 'French (fr-FR)' },
-  { value: 'es-ES', label: 'Spanish (es-ES)' },
-  { value: 'it-IT', label: 'Italian (it-IT)' },
-  { value: 'pt-PT', label: 'Portuguese (pt-PT)' },
-  { value: 'ar-SA', label: 'Arabic (ar-SA)' },
-  { value: 'hi-IN', label: 'Hindi (hi-IN)' },
-  { value: 'uk-UA', label: 'Ukrainian (uk-UA)' },
-  { value: 'tr-TR', label: 'Turkish (tr-TR)' },
-  { value: 'el-GR', label: 'Greek (el-GR)' },
-  { value: 'eo', label: 'Esperanto (eo)' },
+const SPEECH_LOCALE_OPTIONS: Array<{ value: SpeechLocale; lang: LangCode }> = [
+  { value: 'ru-RU', lang: 'ru' },
+  { value: 'en-US', lang: 'en' },
+  { value: 'zh-CN', lang: 'zh' },
+  { value: 'ja-JP', lang: 'ja' },
+  { value: 'sr-RS', lang: 'sr' },
+  { value: 'de-DE', lang: 'de' },
+  { value: 'fr-FR', lang: 'fr' },
+  { value: 'es-ES', lang: 'es' },
+  { value: 'it-IT', lang: 'it' },
+  { value: 'pt-PT', lang: 'pt' },
+  { value: 'ar-SA', lang: 'ar' },
+  { value: 'hi-IN', lang: 'hi' },
+  { value: 'uk-UA', lang: 'uk' },
+  { value: 'tr-TR', lang: 'tr' },
+  { value: 'el-GR', lang: 'grc' },
+  { value: 'eo', lang: 'eo' },
 ];
 
-const TRANSLATE_TARGET_OPTIONS: Array<{ value: LangCode; label: string }> = [
-  { value: 'ru', label: 'Русский (ru)' },
-  { value: 'en', label: 'English (en)' },
-  { value: 'zh', label: '中文 / Chinese (zh)' },
-  { value: 'ja', label: '日本語 / Japanese (ja)' },
-  { value: 'sr', label: 'Српски / Serbian (sr)' },
-  { value: 'de', label: 'Deutsch (de)' },
-  { value: 'fr', label: 'Français (fr)' },
-  { value: 'es', label: 'Español (es)' },
-  { value: 'it', label: 'Italiano (it)' },
-  { value: 'pt', label: 'Português (pt)' },
-  { value: 'ar', label: 'العربية / Arabic (ar)' },
-  { value: 'hi', label: 'हिन्दी / Hindi (hi)' },
-  { value: 'uk', label: 'Українська / Ukrainian (uk)' },
-  { value: 'tr', label: 'Türkçe / Turkish (tr)' },
+const TRANSLATE_TARGET_OPTIONS: Array<{ value: LangCode }> = [
+  { value: 'ru' },
+  { value: 'en' },
+  { value: 'zh' },
+  { value: 'ja' },
+  { value: 'sr' },
+  { value: 'de' },
+  { value: 'fr' },
+  { value: 'es' },
+  { value: 'it' },
+  { value: 'pt' },
+  { value: 'ar' },
+  { value: 'hi' },
+  { value: 'uk' },
+  { value: 'tr' },
 ];
 
 function parseLocationStub(content?: string): LocationStub | null {
@@ -202,6 +203,8 @@ export default function ChatView() {
   const [messageMenuPlacement, setMessageMenuPlacement] = useState<'above' | 'below'>('below');
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
   const [, setReactionVersion] = useState(0);
+  const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [showChatSearch, setShowChatSearch] = useState(false);
   const [messageSearchQuery, setMessageSearchQuery] = useState('');
@@ -284,6 +287,80 @@ export default function ChatView() {
   const localMicAnalyserRef = useRef<AnalyserNode | null>(null);
   const ttsSpeakingRef = useRef(false);
   const peerSpeakingTimeoutRef = useRef<number | null>(null);
+
+  type AnimPreset = 'glow' | 'bounce' | 'roll';
+  type AnimIntensity = 'low' | 'med' | 'high';
+  type MessageAnimInstance = {
+    instanceId: string;
+    preset: AnimPreset;
+    intensity: AnimIntensity;
+    seed: number;
+    startedAt: number;
+    durationMs: number;
+    fromUserId?: string;
+  };
+
+  const [activeAnimsByMessageId, setActiveAnimsByMessageId] = useState<Record<string, MessageAnimInstance[]>>({});
+
+  const cleanupExpiredAnims = () => {
+    const now = Date.now();
+    setActiveAnimsByMessageId((prev) => {
+      let changed = false;
+      const next: Record<string, MessageAnimInstance[]> = {};
+      for (const [mid, list] of Object.entries(prev)) {
+        const keep = list.filter((a) => now - a.startedAt < a.durationMs);
+        if (keep.length !== list.length) changed = true;
+        if (keep.length) next[mid] = keep;
+      }
+      return changed ? next : prev;
+    });
+  };
+
+  useEffect(() => {
+    const id = window.setInterval(() => cleanupExpiredAnims(), 900);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const animRand = (seed: number) => {
+    // Deterministic-ish PRNG for per-instance offsets
+    let x = seed | 0;
+    return () => {
+      x ^= x << 13;
+      x ^= x >> 17;
+      x ^= x << 5;
+      return ((x >>> 0) % 1000) / 1000;
+    };
+  };
+
+  const startSyncedAnimation = (messageId: string, preset: AnimPreset) => {
+    if (!chatId || !user?.id) return;
+    const instanceId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const seed = Math.floor(Math.random() * 1_000_000);
+    const intensity: AnimIntensity = 'med';
+    const durationMs = 8000;
+    socket.emit('message_animation', {
+      chatId,
+      messageId,
+      action: 'start',
+      instanceId,
+      preset,
+      intensity,
+      seed,
+      durationMs,
+    });
+  };
+
+  const stopSyncedAnimations = (messageId: string) => {
+    if (!chatId || !user?.id) return;
+    const instanceId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    socket.emit('message_animation', {
+      chatId,
+      messageId,
+      action: 'stop_all',
+      instanceId,
+    });
+  };
 
   useEffect(() => {
     callTranscriptRef.current = callTranscript;
@@ -385,6 +462,13 @@ export default function ChatView() {
     }
     a.volume = ttsSpeaking ? 0.05 : peerSpeaking ? 0.2 : 0.2;
   }, [translateEngineEnabled, duckingEnabled, ttsSpeaking, peerSpeaking]);
+
+  // Auto-start speech recognition when translation is requested.
+  useEffect(() => {
+    if (!callUi) return;
+    const shouldRecord = translateEnabled || translateHoldActive;
+    setTranscriptEnabled(shouldRecord);
+  }, [callUi, translateEnabled, translateHoldActive]);
 
   useEffect(() => {
     ttsSpeakingRef.current = ttsSpeaking;
@@ -624,7 +708,7 @@ export default function ChatView() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognitionImpl) {
-      setToast('Speech recognition is not supported in this browser');
+      setToast(t('call.toast.speechNotSupported'));
       setTranscriptEnabled(false);
       return;
     }
@@ -632,7 +716,8 @@ export default function ChatView() {
     const rec = new SpeechRecognitionImpl();
     rec.lang = recognitionLang;
     rec.continuous = true;
-    rec.interimResults = true;
+    // Quality-first: avoid interim results to reduce noise/rapid changes.
+    rec.interimResults = false;
 
     rec.onresult = (e: any) => {
       try {
@@ -717,7 +802,7 @@ export default function ChatView() {
       const transcript = callTranscriptRef.current ?? [];
       const peerLines = transcript.filter((l) => l.from === 'peer').slice(-22);
       if (peerLines.length > 0) {
-        const title = language === 'en' ? 'Call summary' : 'Итог звонка';
+        const title = t('call.summary.title');
         const bulletLines = peerLines.map((l) => {
           if (l.translated && l.translated !== l.text) {
             return `• ${l.text}\n  → ${l.translated}`;
@@ -857,7 +942,7 @@ export default function ChatView() {
       }
       if (st === 'failed' || st === 'closed' || st === 'disconnected') {
         // Fallback: если media-track не пришел, но соединение уже распалось — закрываем звонок.
-        setToast('Call connection lost');
+        setToast(t('call.toast.connectionLost'));
         cleanupCall({ emitEnd: false });
       }
     };
@@ -942,7 +1027,7 @@ export default function ChatView() {
       pushCallLog('getUserMedia ok (caller)', { mode });
     } catch {
       pushCallLog('getUserMedia fail (caller)', { mode });
-      setToast('Microphone/camera permission denied');
+      setToast(t('call.toast.permissionDenied'));
       cleanupCall({ emitEnd: false });
       return;
     }
@@ -962,7 +1047,7 @@ export default function ChatView() {
 
     if (!ok) {
       pushCallLog('wakeBackend fail');
-      setToast('Backend is not responding. Try again.');
+      setToast(t('call.toast.backendNotResponding'));
       cleanupCall({ emitEnd: false });
       return;
     }
@@ -977,7 +1062,7 @@ export default function ChatView() {
     const connected = await ensureSocketConnected();
     if (!connected) {
       pushCallLog('socket not connected (caller)');
-      setToast('Socket not connected. Try again.');
+      setToast(t('call.toast.socketNotConnected'));
       cleanupCall({ emitEnd: false });
       return;
     }
@@ -1018,7 +1103,7 @@ export default function ChatView() {
     const connected = await ensureSocketConnected();
     if (!connected) {
       pushCallLog('socket not connected (callee)');
-      setToast('Socket not connected');
+      setToast(t('call.toast.socketNotConnected'));
       cleanupCall({ emitEnd: false });
       return;
     }
@@ -1039,7 +1124,7 @@ export default function ChatView() {
       pushCallLog('getUserMedia ok (callee)', { mode });
     } catch {
       pushCallLog('getUserMedia fail (callee)', { mode });
-      setToast('Microphone/camera permission denied');
+      setToast(t('call.toast.permissionDenied'));
       cleanupCall({ emitEnd: false });
       return;
     }
@@ -1075,7 +1160,7 @@ export default function ChatView() {
       socket.emit('call_answer', { chatId, callId, answer: pc.localDescription });
     } catch {
       pushCallLog('acceptIncomingCall failed');
-      setToast('Call failed to start');
+      setToast(t('call.toast.failedToStart'));
       cleanupCall({ emitEnd: false });
     }
 
@@ -1275,7 +1360,7 @@ export default function ChatView() {
       if (cId === chatId) {
         useMessageStore.getState().updateMessage(chatId!, messageId, {
           isDeleted: true,
-          content: 'This message was deleted',
+          content: t('chat.message.deleted'),
         });
       }
     };
@@ -1300,13 +1385,73 @@ export default function ChatView() {
     socket.on('message_deleted', handleMessageDeleted);
     socket.on('typing', handleTyping);
 
+    const handleMessageAnimation = (p: {
+      chatId: string;
+      messageId: string;
+      action: 'start' | 'stop' | 'stop_all';
+      instanceId: string;
+      preset?: AnimPreset;
+      intensity?: AnimIntensity;
+      seed?: number;
+      durationMs?: number;
+      fromUserId?: string;
+      serverTs?: number;
+    }) => {
+      if (p.chatId !== chatId) return;
+      if (!p.messageId || !p.instanceId) return;
+
+      if (p.action === 'stop_all') {
+        setActiveAnimsByMessageId((prev) => {
+          if (!prev[p.messageId]?.length) return prev;
+          const next = { ...prev };
+          delete next[p.messageId];
+          return next;
+        });
+        return;
+      }
+
+      if (p.action === 'stop') {
+        setActiveAnimsByMessageId((prev) => {
+          const list = prev[p.messageId] || [];
+          const filtered = list.filter((a) => a.instanceId !== p.instanceId);
+          if (filtered.length === list.length) return prev;
+          const next = { ...prev };
+          if (filtered.length) next[p.messageId] = filtered;
+          else delete next[p.messageId];
+          return next;
+        });
+        return;
+      }
+
+      // start
+      const startedAt = Number.isFinite(p.serverTs) ? (p.serverTs as number) : Date.now();
+      const preset = (p.preset ?? 'glow') as AnimPreset;
+      const intensity = (p.intensity ?? 'med') as AnimIntensity;
+      const seed = typeof p.seed === 'number' ? p.seed : Math.floor(Math.random() * 1_000_000);
+      const durationMs = typeof p.durationMs === 'number' ? Math.max(1500, Math.min(30000, p.durationMs)) : 8000;
+
+      setActiveAnimsByMessageId((prev) => {
+        const cur = prev[p.messageId] || [];
+        // prevent duplicate instanceId
+        if (cur.some((a) => a.instanceId === p.instanceId)) return prev;
+        const nextList: MessageAnimInstance[] = [
+          ...cur,
+          { instanceId: p.instanceId, preset, intensity, seed, durationMs, startedAt, fromUserId: p.fromUserId },
+        ];
+        return { ...prev, [p.messageId]: nextList };
+      });
+    };
+
+    socket.on('message_animation', handleMessageAnimation);
+
     return () => {
       socket.off('new_message', handleNewMessage);
       socket.off('message_edited', handleMessageEdited);
       socket.off('message_deleted', handleMessageDeleted);
       socket.off('typing', handleTyping);
+      socket.off('message_animation', handleMessageAnimation);
     };
-  }, [chatId, user]);
+  }, [chatId, user, t]);
 
   // --- Call signaling listeners ---
   useEffect(() => {
@@ -1374,7 +1519,7 @@ export default function ChatView() {
       if (p.chatId !== chatId) return;
       if (callRoleRef.current !== 'caller') return;
       if (callIdRef.current == null || p.callId !== callIdRef.current) return;
-      setToast(p.reason ? `Call rejected: ${p.reason}` : 'Call rejected');
+      setToast(p.reason ? `${t('call.toast.rejected')}: ${p.reason}` : t('call.toast.rejected'));
       cleanupCall({ emitEnd: false });
     };
 
@@ -1511,7 +1656,7 @@ export default function ChatView() {
   const uploadVoiceBlob = async (blob: Blob) => {
     if (!chatId) return;
     if (blob.size < 32) {
-      setToast('Recording too short or empty — try holding a bit longer');
+      setToast(t('chat.toast.recordingTooShort'));
       return;
     }
     setUploadBusy(true);
@@ -1527,7 +1672,7 @@ export default function ChatView() {
         mediaSize,
       });
     } catch {
-      setToast('Could not send voice message');
+      setToast(t('chat.toast.voiceSendFailed'));
     } finally {
       setUploadBusy(false);
     }
@@ -1548,7 +1693,7 @@ export default function ChatView() {
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      setToast('Microphone is not available in this browser');
+      setToast(t('chat.toast.micUnavailable'));
       return;
     }
     try {
@@ -1584,7 +1729,7 @@ export default function ChatView() {
       mediaRecorderRef.current = rec;
       setIsRecording(true);
     } catch {
-      setToast('Allow microphone access to record voice');
+      setToast(t('chat.toast.micPermission'));
     }
   };
 
@@ -1675,7 +1820,7 @@ export default function ChatView() {
 
       socket.stopTyping(chatId);
     } catch {
-      setToast('Could not send. Check connection and try again.');
+      setToast(t('chat.toast.sendFailed'));
     } finally {
       setUploadBusy(false);
     }
@@ -1774,7 +1919,7 @@ export default function ChatView() {
   };
 
   const getChatDisplayInfo = () => {
-    if (!currentChat) return { title: 'Loading...', isOnline: false as boolean | undefined };
+    if (!currentChat) return { title: t('chat.loading'), isOnline: false as boolean | undefined };
 
     if (currentChat.type === 'PRIVATE') {
       const otherMember = currentChat.members.find((m) => m.userId !== user?.id)?.user;
@@ -1835,7 +1980,7 @@ export default function ChatView() {
       if (privatePeerUserId) {
         navigate(`/profile/${privatePeerUserId}`);
       } else {
-        setToast('No contact to show');
+      setToast(t('chat.toast.noContact'));
       }
       return;
     }
@@ -1845,7 +1990,7 @@ export default function ChatView() {
   const formatMessageDate = (date: string) => {
     const d = new Date(date);
     if (isToday(d)) return format(d, 'HH:mm');
-    if (isYesterday(d)) return 'Yesterday ' + format(d, 'HH:mm');
+    if (isYesterday(d)) return t('chat.yesterdayAt').replace('{time}', format(d, 'HH:mm'));
     return format(d, 'dd MMM HH:mm');
   };
 
@@ -1946,7 +2091,7 @@ export default function ChatView() {
       createdAt: message.createdAt,
     });
     setShowMessageMenu(null);
-    setToast('Сохранено в избранное');
+    setToast(t('chat.toast.saved'));
   };
 
   const handleTogglePinMessage = (message: Message) => {
@@ -1976,7 +2121,7 @@ export default function ChatView() {
       }
 
       if (!botId) {
-        setToast('bubble_bot не найден');
+        setToast(t('chat.toast.botNotFound'));
         return;
       }
 
@@ -1990,7 +2135,7 @@ export default function ChatView() {
       }
 
       if (currentChat.type === 'CHANNEL') {
-        setToast('Обсуждения для каналов пока недоступны');
+        setToast(t('chat.toast.discussionsUnavailable'));
         return;
       }
 
@@ -2014,7 +2159,7 @@ export default function ChatView() {
       navigate(`/chat/${discussionChat.id}`);
     } catch (e) {
       console.error('Discuss message error:', e);
-      setToast('Не удалось открыть обсуждение');
+      setToast(t('chat.toast.discussionOpenFailed'));
     }
   };
 
@@ -2036,7 +2181,7 @@ export default function ChatView() {
 
     try {
       await navigator.clipboard.writeText(text);
-      setToast('Copied');
+      setToast(t('chat.toast.copied'));
       setShowMessageMenu(null);
       return;
     } catch {
@@ -2053,17 +2198,84 @@ export default function ChatView() {
         ta.select();
         document.execCommand('copy');
         document.body.removeChild(ta);
-        setToast('Copied');
+        setToast(t('chat.toast.copied'));
         setShowMessageMenu(null);
       } catch {
-        setToast('Could not copy');
+        setToast(t('chat.toast.copyFailed'));
       }
     }
   };
 
+  const getMessageSnippet = (m: Message): string => {
+    if (m.isDeleted) return t('chat.message.deleted');
+    if (m.content?.trim()) return m.content.trim();
+    const poll = parsePollStub(m.content);
+    if (poll) return t('chat.snippet.poll');
+    const loc = parseLocationStub(m.content);
+    if (loc) return t('chat.snippet.location');
+    if (m.contentType === 'IMAGE' && m.mediaUrl) return t('chat.snippet.drawing');
+    if ((m.contentType === 'AUDIO' || m.contentType === 'VOICE') && m.mediaUrl) return t('chat.snippet.audio');
+    if (m.contentType === 'VIDEO' && m.mediaUrl) return t('chat.search.filter.video');
+    if (m.contentType === 'FILE' && m.mediaUrl) return t('chat.snippet.file');
+    return `[${t('chat.snippet.message')}]`;
+  };
+
+  const toggleSelectedMessage = (id: string) => {
+    setSelectedMessageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelectedMessages = () => setSelectedMessageIds(new Set());
+
+  const handleCopySelectedMessages = async () => {
+    if (!selectedMessageIds.size) return;
+    const selected = chatMessages.filter((m) => selectedMessageIds.has(m.id));
+    const text = selected.map(getMessageSnippet).join('\n');
+    if (!text.trim()) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setToast(t('chat.toast.copiedN').replace('{n}', String(selected.length)));
+      clearSelectedMessages();
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', 'true');
+        ta.style.position = 'fixed';
+        ta.style.top = '0';
+        ta.style.left = '0';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setToast(t('chat.toast.copiedN').replace('{n}', String(selected.length)));
+        clearSelectedMessages();
+      } catch {
+        setToast(t('chat.toast.copySelectedFailed'));
+      }
+    }
+  };
+
+  const handleRepostSelectedMessages = () => {
+    if (!selectedMessageIds.size) return;
+    const selected = chatMessages.filter((m) => selectedMessageIds.has(m.id));
+    const text = selected.map(getMessageSnippet).join('\n');
+    if (!text.trim()) return;
+    setMessageInput(text);
+    setEditingMessage(null);
+    setReplyingTo(null);
+    clearSelectedMessages();
+    inputRef.current?.focus();
+  };
+
   const handleDeleteChat = async () => {
     if (!chatId || !currentChat) return;
-    if (!window.confirm('Delete this chat for everyone? This cannot be undone.')) return;
+    if (!window.confirm(t('chat.confirm.deleteChat'))) return;
     try {
       await api.delete(`/chats/${chatId}`);
       removeChat(chatId);
@@ -2071,22 +2283,22 @@ export default function ChatView() {
       setMenuPanel('main');
       navigate('/');
     } catch {
-      setToast('Could not delete chat');
+      setToast(t('chat.toast.deleteFailed'));
     }
   };
 
   const handleClearHistory = async () => {
     if (!chatId) return;
-    if (!window.confirm('Clear all messages in this chat for everyone?')) return;
+    if (!window.confirm(t('chat.confirm.clearHistory'))) return;
     try {
       await api.clearChatHistory(chatId);
       clearChatMessages(chatId);
       await fetchMessages(chatId);
       setShowMenu(false);
       setMenuPanel('main');
-      setToast('Chat history cleared');
+      setToast(t('chat.toast.historyCleared'));
     } catch {
-      setToast('Could not clear history');
+      setToast(t('chat.toast.clearFailed'));
     }
   };
 
@@ -2101,7 +2313,7 @@ export default function ChatView() {
     URL.revokeObjectURL(a.href);
     setShowMenu(false);
     setMenuPanel('main');
-    setToast('Chat exported');
+    setToast(t('chat.toast.exported'));
   };
 
   const applyMute = (mode: 'off' | '1h' | '8h' | '1w' | 'forever') => {
@@ -2110,16 +2322,17 @@ export default function ChatView() {
     setMuteTick((n) => n + 1);
     setShowMenu(false);
     setMenuPanel('main');
-    setToast(mode === 'off' ? 'Notifications unmuted' : 'Notifications muted');
+    setToast(mode === 'off' ? t('chat.toast.notificationsUnmuted') : t('chat.toast.notificationsMuted'));
   };
 
   const preset = chatId ? CHAT_THEME_PRESETS[chatThemeId] : CHAT_THEME_PRESETS.default;
   const muted = chatId ? isChatMuted(chatId) : false;
 
   const subtitleText = () => {
-    if (info.isOnline === true) return 'Online';
-    if (info.isOnline === false) return 'Last seen recently';
-    if (info.memberCount != null) return memberLabel(info.memberCount);
+    if (info.isOnline === true) return t('chat.online');
+    if (info.isOnline === false) return t('chat.lastSeenRecently');
+    if (info.memberCount != null)
+      return memberLabel(info.memberCount, t('chat.members.one'), t('chat.members.other'));
     if (info.username) return `@${info.username}`;
     return '';
   };
@@ -2176,16 +2389,50 @@ export default function ChatView() {
         </div>
       )}
 
+      {selectedMessageIds.size > 0 && !callUi && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[120] px-4 py-3 bg-background-light border border-background-medium rounded-xl shadow-xl w-full max-w-[95vw]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm text-text-primary font-semibold">
+              {t('chat.selection.selectedCount').replace('{count}', String(selectedMessageIds.size))}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleCopySelectedMessages()}
+                className="px-3 py-2 rounded-lg bg-primary text-white text-sm hover:opacity-95 transition-colors"
+              >
+                {t('chat.selection.copy')}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRepostSelectedMessages()}
+                className="px-3 py-2 rounded-lg bg-background-light border border-background-medium text-text-primary text-sm hover:bg-background-medium transition-colors"
+              >
+                {t('chat.selection.repost')}
+              </button>
+              <button
+                type="button"
+                onClick={clearSelectedMessages}
+                className="p-2 rounded-lg hover:bg-background-light border border-background-medium text-text-secondary transition-colors"
+                aria-label={t('chat.selection.clear')}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {callUi && (
         <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-5xl bg-background-light border border-background-medium rounded-xl shadow-2xl overflow-hidden">
+          <div className="w-full max-w-md sm:max-w-5xl bg-background-light border border-background-medium rounded-xl shadow-2xl overflow-hidden max-h-[95vh] flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-background-medium/70">
               <div className="text-sm font-semibold text-text-primary">
                 {callUi.phase === 'incoming'
-                  ? 'Incoming call'
+                  ? t('call.ui.incomingCall')
                   : callUi.mode === 'video'
-                    ? 'Video call'
-                    : 'Voice call'}
+                    ? t('call.ui.videoCall')
+                    : t('call.ui.voiceCall')}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -2196,9 +2443,9 @@ export default function ChatView() {
                       : 'bg-background-light border-background-medium hover:bg-background-medium text-text-primary'
                   }`}
                   onClick={() => setTranslateEnabled((v) => !v)}
-                  title="Translation"
+                  title={t('call.ui.translation')}
                 >
-                  Перевод
+                  {t('call.ui.translation')}
                 </button>
                 <button
                   type="button"
@@ -2214,14 +2461,14 @@ export default function ChatView() {
                   onPointerUp={() => setTranslateHoldActive(false)}
                   onPointerCancel={() => setTranslateHoldActive(false)}
                   onPointerLeave={() => setTranslateHoldActive(false)}
-                  title="Hold to translate"
+                  title={t('call.ui.holdToTranslate')}
                 >
-                  Hold
+                  {t('call.ui.hold')}
                 </button>
                 <button
                   type="button"
                   className="p-2 hover:bg-background-light rounded-full transition-colors"
-                  aria-label="Close call"
+                  aria-label={t('call.ui.closeCall')}
                   onClick={() => {
                     if (callUi.phase === 'incoming') rejectIncomingCall();
                     else endCall();
@@ -2232,17 +2479,17 @@ export default function ChatView() {
               </div>
             </div>
 
-            <div className="relative px-4 py-4">
-              <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
+            <div className="relative px-4 py-4 flex-1 overflow-hidden">
+              <div className="grid grid-cols-1 gap-4 h-full">
                 <div>
                   {callUi.mode === 'audio' ? (
                     <div className="grid grid-cols-1 gap-3">
                       <audio ref={remoteAudioRef} playsInline className="sr-only" />
-                      <div className="relative overflow-hidden w-full h-[22rem] rounded-lg bg-background-dark/70 border border-background-medium/60 flex items-center justify-center">
+                      <div className="relative overflow-hidden w-full h-[16rem] sm:h-[22rem] rounded-lg bg-background-dark/70 border border-background-medium/60 flex items-center justify-center">
                       {subtitle && (
                         <div className="absolute bottom-3 left-3 right-3 z-10 bg-black/55 text-white rounded-xl px-3 py-2 pointer-events-none">
                           <div className="text-[10px] text-white/80">
-                            {subtitle.speaker === 'me' ? 'You' : 'Peer'}
+                            {subtitle.speaker === 'me' ? t('call.ui.speakerYou') : t('call.ui.speakerPeer')}
                           </div>
                           <div className="text-[11px] text-white/90 whitespace-pre-wrap break-words">{subtitle.original}</div>
                           {subtitle.translated && (
@@ -2251,19 +2498,41 @@ export default function ChatView() {
                         </div>
                       )}
                         <div className="flex flex-col items-center gap-3 text-text-secondary">
-                          {/* Cat placeholder */}
-                          <svg width="120" height="120" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-                            <path d="M16 22c0-9 6-14 16-14s16 5 16 14v8c0 14-7 24-16 24S16 44 16 30v-8Z" fill="#FF2B5E" fillOpacity="0.18" />
-                            <path d="M18 18 9 26c-2 2-2 6 0 8l5 5" stroke="#FF2B5E" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M46 18 55 26c2 2 2 6 0 8l-5 5" stroke="#FF2B5E" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M24 27c0-3 3-6 8-6s8 3 8 6" stroke="#FF2B5E" strokeWidth="3" strokeLinecap="round" />
-                            <circle cx="26.5" cy="34" r="3.8" fill="#FF2B5E" />
-                            <circle cx="43.5" cy="34" r="3.8" fill="#FF2B5E" />
-                            <path d="M32 36c-4 2-6 6-6 8 0 3 3 5 6 5s6-2 6-5c0-2-2-6-6-8Z" fill="#FF2B5E" fillOpacity="0.28" />
-                            <path d="M28 44c1.5 2 3 3 4 3s2.5-1 4-3" stroke="#FF2B5E" strokeWidth="2" strokeLinecap="round" />
-                          </svg>
+                          {/* Robot-cups placeholder (animated) */}
+                          <div className="relative w-[10rem] h-[6rem]">
+                            <div
+                              className="absolute left-0 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-[#FF2B5E]/20 border border-[#FF2B5E]/40 flex items-center justify-center animate-bounce"
+                              style={{ animationDelay: '0s' }}
+                            >
+                              <svg width="26" height="26" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+                                <path d="M18 24c0-6 6-11 14-11s14 5 14 11" stroke="#FF2B5E" strokeWidth="4" strokeLinecap="round" />
+                                <circle cx="26" cy="28" r="3.5" fill="#FF2B5E" />
+                                <circle cx="38" cy="28" r="3.5" fill="#FF2B5E" />
+                                <path d="M24 39c4 3 12 3 16 0" stroke="#FF2B5E" strokeWidth="4" strokeLinecap="round" />
+                              </svg>
+                            </div>
+                            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-8">
+                              <div className="absolute left-1 top-3 w-6 h-6 rounded-full bg-[#60A5FA]/20 border border-[#60A5FA]/40 animate-pulse" />
+                              <div className="absolute right-1 top-3 w-6 h-6 rounded-full bg-[#22C55E]/20 border border-[#22C55E]/40 animate-pulse" />
+                            </div>
+                            <div
+                              className="absolute right-0 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-[#22C55E]/20 border border-[#22C55E]/40 flex items-center justify-center animate-bounce"
+                              style={{ animationDelay: '0.25s' }}
+                            >
+                              <svg width="26" height="26" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+                                <path d="M18 24c0-6 6-11 14-11s14 5 14 11" stroke="#22C55E" strokeWidth="4" strokeLinecap="round" />
+                                <circle cx="26" cy="28" r="3.5" fill="#22C55E" />
+                                <circle cx="38" cy="28" r="3.5" fill="#22C55E" />
+                                <path d="M24 39c4 3 12 3 16 0" stroke="#22C55E" strokeWidth="4" strokeLinecap="round" />
+                              </svg>
+                            </div>
+                            <div className="absolute left-1/2 top-2 w-[1px] h-[2.6rem] bg-[#60A5FA]/40" />
+                            <div className="absolute left-1/2 bottom-1 w-[1px] h-[1.3rem] bg-[#60A5FA]/30" />
+                          </div>
                           <span className="text-sm">
-                            {callUi.phase === 'in_call' ? 'Voice call in progress' : 'Connecting voice call...'}
+                            {callUi.phase === 'in_call'
+                              ? t('call.ui.voiceInProgress')
+                              : t('call.ui.connectingVoice')}
                           </span>
                         </div>
                       </div>
@@ -2271,11 +2540,16 @@ export default function ChatView() {
                   ) : (
                     <div className="grid grid-cols-1 gap-3">
                       <div className="relative w-full">
-                        <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-[22rem] bg-black rounded-lg object-cover" />
+                        <video
+                          ref={remoteVideoRef}
+                          autoPlay
+                          playsInline
+                          className="w-full h-[16rem] sm:h-[22rem] bg-black rounded-lg object-cover"
+                        />
                         {subtitle && (
                           <div className="absolute bottom-3 left-3 right-3 z-10 bg-black/55 text-white rounded-xl px-3 py-2 pointer-events-none">
                             <div className="text-[10px] text-white/80">
-                              {subtitle.speaker === 'me' ? 'You' : 'Peer'}
+                              {subtitle.speaker === 'me' ? t('call.ui.speakerYou') : t('call.ui.speakerPeer')}
                             </div>
                             <div className="text-[11px] text-white/90 whitespace-pre-wrap break-words">{subtitle.original}</div>
                             {subtitle.translated && (
@@ -2285,22 +2559,28 @@ export default function ChatView() {
                         )}
                       </div>
                       <div className="flex justify-end">
-                        <video ref={localVideoRef} autoPlay playsInline muted className="w-40 h-28 bg-black rounded-lg object-cover" />
+                        <video
+                          ref={localVideoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="w-32 h-20 sm:w-40 sm:h-28 bg-black rounded-lg object-cover"
+                        />
                       </div>
                     </div>
                   )}
                 </div>
 
-                <div className="rounded-lg border border-background-medium/70 bg-background-dark/20 p-3 flex flex-col min-h-[22rem]">
+                <div className="hidden">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm font-semibold text-text-primary">Transcript</div>
+                    <div className="text-sm font-semibold text-text-primary">{t('call.ui.transcript')}</div>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         className="px-3 py-1.5 rounded-lg bg-background-light border border-background-medium hover:bg-background-medium transition-colors text-sm"
                         onClick={() => setTranscriptEnabled((v) => !v)}
                       >
-                        {transcriptEnabled ? 'Stop' : 'Start'}
+                        {transcriptEnabled ? t('call.ui.stop') : t('call.ui.start')}
                       </button>
                       <button
                         type="button"
@@ -2315,25 +2595,25 @@ export default function ChatView() {
                             clearAndCancelTts();
                           }
                         }}
-                        title="Cloud translation uses /api/translate"
+                        title={t('call.ui.cloudTranslationTooltip')}
                       >
-                        {cloudTranslationEnabled ? 'Cloud' : 'No cloud'}
+                        {cloudTranslationEnabled ? t('call.ui.cloud') : t('call.ui.noCloud')}
                       </button>
                     </div>
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <span className="text-[11px] px-2 py-1 rounded-lg bg-background-dark/40 border border-background-medium/60 text-text-secondary">
-                      ASR: {transcriptEnabled ? 'On' : 'Off'}
+                      {t('call.ui.asr')}: {transcriptEnabled ? t('call.ui.on') : t('call.ui.off')}
                     </span>
                     <span className="text-[11px] px-2 py-1 rounded-lg bg-background-dark/40 border border-background-medium/60 text-text-secondary">
-                      Mic: {micLevel == null ? '--' : `${Math.round(micLevel * 100)}%`}
+                      {t('call.ui.mic')}: {micLevel == null ? '--' : `${Math.round(micLevel * 100)}%`}
                     </span>
                     <span className="text-[11px] px-2 py-1 rounded-lg bg-background-dark/40 border border-background-medium/60 text-text-secondary">
-                      Net: {netRttMs == null ? '--' : `${netRttMs}ms`}
+                      {t('call.ui.net')}: {netRttMs == null ? '--' : `${netRttMs}ms`}
                     </span>
                     <span className="text-[11px] px-2 py-1 rounded-lg bg-background-dark/40 border border-background-medium/60 text-text-secondary">
-                      TTS: {ttsSpeaking ? 'Speaking' : 'Idle'}
+                      {t('call.ui.tts')}: {ttsSpeaking ? t('call.ui.speaking') : t('call.ui.idle')}
                     </span>
                     <button
                       type="button"
@@ -2343,54 +2623,54 @@ export default function ChatView() {
                           : 'bg-primary text-white border-primary'
                       }`}
                       onClick={() => setDuckingEnabled((v) => !v)}
-                      title="Toggle ducking (reduce original audio while translating)"
+                      title={t('call.ui.duckingTooltip')}
                     >
-                      {duckingEnabled ? 'Ducking: On' : 'Ducking: Off'}
+                      {duckingEnabled ? t('call.ui.duckingOn') : t('call.ui.duckingOff')}
                     </button>
                   </div>
 
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <label className="text-xs text-text-secondary">
-                      ASR
+                      {t('call.ui.asr')}
                       <select
                         className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background-light border border-background-medium text-text-primary"
                         value={asrLangOverride}
                         onChange={(e) => setAsrLangOverride(e.target.value as 'auto' | SpeechLocale)}
                       >
-                        <option value="auto">Auto</option>
+                        <option value="auto">{t('call.translationTarget.auto')}</option>
                         {SPEECH_LOCALE_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>
-                            {opt.label}
+                            {t(`language.name.${opt.lang}` as any)}
                           </option>
                         ))}
                       </select>
                     </label>
                     <label className="text-xs text-text-secondary">
-                      Translate to
+                      {t('call.ui.translateTo')}
                       <select
                         className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background-light border border-background-medium text-text-primary"
                         value={translateTargetLang}
                         onChange={(e) => setTranslateTargetLang(e.target.value as 'auto' | LangCode)}
                       >
-                        <option value="auto">Auto</option>
+                        <option value="auto">{t('call.translationTarget.auto')}</option>
                         {TRANSLATE_TARGET_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>
-                            {opt.label}
+                            {t(`language.name.${opt.value}` as any)}
                           </option>
                         ))}
                       </select>
                     </label>
                     <label className="text-xs text-text-secondary">
-                      TTS
+                      {t('call.ui.tts')}
                       <select
                         className="mt-1 w-full px-2 py-1.5 rounded-lg bg-background-light border border-background-medium text-text-primary"
                         value={ttsLangOverride}
                         onChange={(e) => setTtsLangOverride(e.target.value as 'auto' | SpeechLocale)}
                       >
-                        <option value="auto">Auto</option>
+                        <option value="auto">{t('call.translationTarget.auto')}</option>
                         {SPEECH_LOCALE_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>
-                            {opt.label}
+                            {t(`language.name.${opt.lang}` as any)}
                           </option>
                         ))}
                       </select>
@@ -2410,18 +2690,18 @@ export default function ChatView() {
                           ? 'bg-primary text-white border-primary hover:opacity-95'
                           : 'bg-background-light border-background-medium text-text-secondary disabled:opacity-60'
                       }`}
-                      title="Repeat last spoken line"
+                      title={t('call.ui.repeatTooltip')}
                     >
-                      Repeat
+                      {t('call.ui.repeat')}
                     </button>
-                    <span className="text-[11px] text-text-secondary px-1">Presets:</span>
+                    <span className="text-[11px] text-text-secondary px-1">{t('call.ui.presetsLabel')}</span>
                     {(
                       [
-                        { v: 'auto', label: 'Auto' },
-                        { v: 'ru', label: 'RU' },
-                        { v: 'en', label: 'EN' },
-                        { v: 'zh', label: 'ZH' },
-                        { v: 'ja', label: 'JA' },
+                        { v: 'auto', label: t('call.translationTarget.auto') },
+                        { v: 'ru', label: t('language.name.ru') },
+                        { v: 'en', label: t('language.name.en') },
+                        { v: 'zh', label: t('language.name.zh') },
+                        { v: 'ja', label: t('language.name.ja') },
                       ] as const
                     ).map((p) => (
                       <button
@@ -2441,12 +2721,12 @@ export default function ChatView() {
 
                   <div className="mt-2">
                     <label className="text-xs text-text-secondary">
-                      Skip terms (no translation)
+                      {t('call.ui.skipTermsLabel')}
                       <input
                         type="text"
                         value={skipTranslateTermsInput}
                         onChange={(e) => setSkipTranslateTermsInput(e.target.value)}
-                        placeholder="e.g. names, brands (comma-separated)"
+                        placeholder={t('call.ui.skipTermsPlaceholder')}
                         className="mt-1 w-full px-3 py-2 rounded-lg bg-background-light border border-background-medium text-text-primary"
                       />
                     </label>
@@ -2454,13 +2734,14 @@ export default function ChatView() {
 
                   <div className="mt-3 flex-1 overflow-y-auto rounded-lg bg-background-dark/40 border border-background-medium/50 p-2">
                     {callTranscript.length === 0 ? (
-                      <div className="text-xs text-text-secondary">No transcript yet…</div>
+                      <div className="text-xs text-text-secondary">{t('call.ui.noTranscriptYet')}</div>
                     ) : (
                       <div className="space-y-2">
                         {callTranscript.slice(-80).map((l) => (
                           <div key={l.id} className="text-sm">
                             <div className="text-[11px] text-text-secondary">
-                              {new Date(l.at).toLocaleTimeString()} · {l.from === 'me' ? 'Me' : 'Peer'} {l.lang ? `· ${l.lang}` : ''}
+                              {new Date(l.at).toLocaleTimeString()} · {l.from === 'me' ? t('call.ui.me') : t('call.ui.peer')}{' '}
+                              {l.lang ? `· ${l.lang}` : ''}
                             </div>
                             <div className="text-text-primary whitespace-pre-wrap break-words">{l.text}</div>
                             {l.translated && (
@@ -2535,13 +2816,15 @@ export default function ChatView() {
                 className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-background-dark/40 border border-background-medium/70 hover:bg-background-dark/55 transition-colors"
                 onClick={() => setCallDebugExpanded((v) => !v)}
               >
-                <span className="text-[12px] text-text-secondary">Call debug log</span>
-                <span className="text-[12px] text-text-secondary">{callDebugExpanded ? 'Hide' : 'Show'}</span>
+                <span className="text-[12px] text-text-secondary">{t('call.ui.callDebugLog')}</span>
+                <span className="text-[12px] text-text-secondary">
+                  {callDebugExpanded ? t('call.ui.hide') : t('call.ui.show')}
+                </span>
               </button>
               {callDebugExpanded && (
-                <div className="mt-2 rounded-lg bg-background-dark/60 border border-background-medium/70 p-2 max-h-40 overflow-y-auto">
+                <div className="mt-2 rounded-lg bg-background-dark/60 border border-background-medium/70 p-2 max-h-72 overflow-y-auto">
                   {callDebugLogs.length === 0 ? (
-                    <div className="text-[11px] text-text-secondary/80">No events yet…</div>
+                    <div className="text-[11px] text-text-secondary/80">{t('call.ui.noEventsYet')}</div>
                   ) : (
                     <div className="space-y-0.5">
                       {callDebugLogs.map((l, i) => (
@@ -2551,6 +2834,33 @@ export default function ChatView() {
                       ))}
                     </div>
                   )}
+
+                  <div className="mt-3 pt-2 border-t border-background-medium/70">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[11px] text-text-secondary">{t('call.ui.transcriptAndTranslation')}</div>
+                      <div className="text-[11px] text-text-secondary">
+                        {callTranscript.length > 0
+                          ? t('call.ui.linesCount').replace('{n}', String(callTranscript.length))
+                          : ''}
+                      </div>
+                    </div>
+                    <div className="mt-2 space-y-2 max-h-56 overflow-y-auto">
+                      {callTranscript.length === 0 ? (
+                        <div className="text-[11px] text-text-secondary/80">{t('call.ui.transcriptNoYetShort')}</div>
+                      ) : (
+                        callTranscript.slice(-120).map((l) => (
+                          <div key={l.id} className="text-[11px]">
+                            <div className="text-[10px] text-text-secondary">
+                              {new Date(l.at).toLocaleTimeString()} ·{' '}
+                              {l.from === 'me' ? t('call.ui.speakerYou') : t('call.ui.speakerPeer')}{' '}
+                              {l.lang ? `· ${l.lang}` : ''}
+                            </div>
+                            <div className="text-text-primary whitespace-pre-wrap break-words">{l.translated ? l.translated : l.text}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -2563,12 +2873,12 @@ export default function ChatView() {
           <div className="w-full max-w-md bg-background-light border border-background-medium rounded-xl shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-background-medium/70">
               <div className="text-sm font-semibold text-text-primary">
-                {language === 'en' ? 'Call summary' : 'Итог звонка'}
+                {t('call.summary.title')}
               </div>
               <button
                 type="button"
                 className="p-2 hover:bg-background-light rounded-full transition-colors"
-                aria-label="Close call summary"
+                aria-label={t('call.summary.closeAria')}
                 onClick={() => setShowCallSummary(false)}
               >
                 ✕
@@ -2583,7 +2893,7 @@ export default function ChatView() {
                 className="w-full px-4 py-2 bg-primary text-white rounded-lg hover:opacity-95 transition-opacity text-sm"
                 onClick={() => setShowCallSummary(false)}
               >
-                OK
+                {t('common.ok')}
               </button>
             </div>
           </div>
@@ -2597,8 +2907,8 @@ export default function ChatView() {
             type="button"
             onClick={() => navigate(`/chat/${parentDiscussion.parentChatId}`)}
             className="p-2 hover:bg-background-light rounded-full transition-colors"
-            aria-label="Back to parent chat"
-            title="Back"
+            aria-label={t('chat.navigation.backToParentChat')}
+            title={t('common.back')}
           >
             <ArrowLeft className="w-5 h-5 text-text-secondary" />
           </button>
@@ -2607,7 +2917,7 @@ export default function ChatView() {
             type="button"
             onClick={() => navigate('/')}
             className="md:hidden p-2 hover:bg-background-light rounded-full transition-colors"
-            aria-label="Back to chats"
+            aria-label={t('chat.navigation.backToChats')}
           >
             <ArrowLeft className="w-5 h-5 text-text-secondary" />
           </button>
@@ -2661,8 +2971,8 @@ export default function ChatView() {
               }
             }}
             className="p-2 hover:bg-background-light rounded-full transition-colors"
-            aria-label="Search in chat"
-            title="Search in chat"
+            aria-label={t('chat.navigation.searchInChat')}
+            title={t('chat.navigation.searchInChat')}
           >
             <Search className="w-5 h-5 text-text-secondary" />
           </button>
@@ -2673,8 +2983,8 @@ export default function ChatView() {
                 onClick={() => void startCallerCall('audio')}
                 disabled={Boolean(callUi) || !socket.connected && !accessToken}
                 className="p-2 hover:bg-background-light rounded-full transition-colors disabled:opacity-50"
-                aria-label="Voice call"
-                title="Voice call"
+                aria-label={t('chat.navigation.voiceCall')}
+                title={t('chat.navigation.voiceCall')}
               >
                 <Phone className="w-5 h-5 text-text-secondary" />
               </button>
@@ -2683,8 +2993,8 @@ export default function ChatView() {
                 onClick={() => void startCallerCall('video')}
                 disabled={Boolean(callUi) || !socket.connected && !accessToken}
                 className="p-2 hover:bg-background-light rounded-full transition-colors disabled:opacity-50"
-                aria-label="Video call"
-                title="Video call"
+                aria-label={t('chat.navigation.videoCall')}
+                title={t('chat.navigation.videoCall')}
               >
                 <Video className="w-5 h-5 text-text-secondary" />
               </button>
@@ -2698,7 +3008,7 @@ export default function ChatView() {
                 setShowMenu(!showMenu);
               }}
               className="p-2 hover:bg-background-light rounded-full transition-colors"
-              aria-label="Chat menu"
+              aria-label={t('chat.navigation.chatMenu')}
             >
               <MoreVertical className="w-5 h-5 text-text-secondary" />
             </button>
@@ -2725,7 +3035,7 @@ export default function ChatView() {
                         className="w-full px-4 py-2.5 text-left text-text-primary hover:bg-background-medium flex items-center gap-3 transition-colors text-sm"
                       >
                         <Search className="w-4 h-4 shrink-0" />
-                        Search in chat
+                        {t('chat.menu.searchInChat')}
                       </button>
                       <button
                         type="button"
@@ -2733,12 +3043,15 @@ export default function ChatView() {
                         className="w-full px-4 py-2.5 text-left text-text-primary hover:bg-background-medium flex items-center gap-3 transition-colors text-sm"
                       >
                         <BellOff className="w-4 h-4 shrink-0" />
-                        <span className="flex-1">Mute notifications</span>
+                        <span className="flex-1">{t('chat.menu.muteNotifications')}</span>
                         <ChevronRight className="w-4 h-4 text-text-secondary shrink-0" />
                       </button>
                       {muted && chatId && (
                         <p className="px-4 pb-1 text-xs text-text-secondary" key={muteTick}>
-                          Until {muteLabel(chatId) ?? 'Forever'}
+                          {t('chat.menu.until').replace(
+                            '{time}',
+                            muteLabel(chatId) ?? t('call.ui.forever')
+                          )}
                         </p>
                       )}
                       <button
@@ -2750,7 +3063,7 @@ export default function ChatView() {
                         className="w-full px-4 py-2.5 text-left text-text-primary hover:bg-background-medium flex items-center gap-3 transition-colors text-sm"
                       >
                         <Users className="w-4 h-4 shrink-0" />
-                        Chat info
+                        {t('chat.menu.chatInfo')}
                       </button>
                       <button
                         type="button"
@@ -2820,7 +3133,7 @@ export default function ChatView() {
                           className="w-full px-4 py-2.5 text-left text-text-primary hover:bg-background-medium flex items-center gap-3 transition-colors text-sm"
                         >
                           <BarChart3 className="w-4 h-4 shrink-0" />
-                          Опрос
+                        {t('poll.new')}
                         </button>
                       )}
                       <button
@@ -2832,7 +3145,7 @@ export default function ChatView() {
                         className="w-full px-4 py-2.5 text-left text-status-danger hover:bg-background-medium flex items-center gap-3 transition-colors text-sm"
                       >
                         <Trash2 className="w-4 h-4 shrink-0" />
-                        Delete chat
+                        {t('chatSidebar.context.deleteChat')}
                       </button>
                     </>
                   ) : (
@@ -2843,42 +3156,42 @@ export default function ChatView() {
                         className="w-full px-4 py-2.5 text-left text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors text-sm border-b border-background-medium"
                       >
                         <ChevronLeft className="w-4 h-4" />
-                        Mute notifications
+                        {t('chat.menu.muteNotifications')}
                       </button>
                       <button
                         type="button"
                         onClick={() => applyMute('off')}
                         className="w-full px-4 py-2.5 text-left text-text-primary hover:bg-background-medium text-sm"
                       >
-                        Disable mute
+                        {t('chat.menu.disableMute')}
                       </button>
                       <button
                         type="button"
                         onClick={() => applyMute('1h')}
                         className="w-full px-4 py-2.5 text-left text-text-primary hover:bg-background-medium text-sm"
                       >
-                        Mute for 1 hour
+                        {t('chat.menu.mute1h')}
                       </button>
                       <button
                         type="button"
                         onClick={() => applyMute('8h')}
                         className="w-full px-4 py-2.5 text-left text-text-primary hover:bg-background-medium text-sm"
                       >
-                        Mute for 8 hours
+                        {t('chat.menu.mute8h')}
                       </button>
                       <button
                         type="button"
                         onClick={() => applyMute('1w')}
                         className="w-full px-4 py-2.5 text-left text-text-primary hover:bg-background-medium text-sm"
                       >
-                        Mute for 1 week
+                        {t('chat.menu.mute1w')}
                       </button>
                       <button
                         type="button"
                         onClick={() => applyMute('forever')}
                         className="w-full px-4 py-2.5 text-left text-status-danger hover:bg-background-medium text-sm"
                       >
-                        Mute forever
+                        {t('chat.menu.muteForever')}
                       </button>
                     </>
                   )}
@@ -2897,7 +3210,7 @@ export default function ChatView() {
               type="search"
               value={messageSearchQuery}
               onChange={(e) => setMessageSearchQuery(e.target.value)}
-              placeholder="Поиск по сообщениям…"
+              placeholder={t('chat.search.placeholder')}
               className="flex-1 min-w-0 bg-background-light rounded-lg px-3 py-2 text-sm text-text-primary placeholder-text-secondary border border-transparent focus:border-primary"
               autoFocus
             />
@@ -2909,7 +3222,7 @@ export default function ChatView() {
                 setChatSearchFilter('all');
               }}
               className="p-2 hover:bg-background-light rounded-full"
-              aria-label="Close search"
+              aria-label={t('chat.search.close')}
             >
               <X className="w-4 h-4 text-text-secondary" />
             </button>
@@ -2917,11 +3230,11 @@ export default function ChatView() {
           <div className="flex flex-wrap gap-1.5">
             {(
               [
-                { id: 'all' as const, label: 'Все' },
-                { id: 'IMAGE' as const, label: 'Фото' },
-                { id: 'VIDEO' as const, label: 'Видео' },
-                { id: 'FILE' as const, label: 'Файлы' },
-                { id: 'VOICE' as const, label: 'Голос' },
+                { id: 'all' as const, label: t('chat.search.filter.all') },
+                { id: 'IMAGE' as const, label: t('chat.search.filter.photo') },
+                { id: 'VIDEO' as const, label: t('chat.search.filter.video') },
+                { id: 'FILE' as const, label: t('chat.search.filter.files') },
+                { id: 'VOICE' as const, label: t('chat.search.filter.voice') },
               ] as const
             ).map((chip) => (
               <button
@@ -2969,7 +3282,7 @@ export default function ChatView() {
               </p>
               <p className="text-sm text-text-primary truncate">
                 {pinnedMessage.content?.trim() ||
-                  (pinnedMessage.mediaUrl ? '[attachment]' : 'Сообщение')}
+                  (pinnedMessage.mediaUrl ? t('sidebar.attachment') : t('chat.message'))}
               </p>
             </button>
             <button
@@ -2991,9 +3304,9 @@ export default function ChatView() {
             <div className="flex items-center justify-center my-4">
               <span className="px-3 py-1 bg-background-medium rounded-full text-xs text-text-secondary">
                 {isToday(new Date(group.date))
-                  ? 'Today'
+                  ? t('chat.today')
                   : isYesterday(new Date(group.date))
-                    ? 'Yesterday'
+                    ? t('chat.yesterday')
                     : format(new Date(group.date), 'MMMM d, yyyy')}
               </span>
             </div>
@@ -3019,7 +3332,14 @@ export default function ChatView() {
                   <div
                     key={message.id}
                     id={`message-${message.id}`}
-                    className="group"
+                    className="group relative"
+                    onClick={(e) => {
+                      if (selectedMessageIds.size === 0) return;
+                      const target = e.target as HTMLElement | null;
+                      if (!target) return;
+                      if (target.closest('button,a,input,textarea,select,label,[role="button"],[role="menuitem"]')) return;
+                      toggleSelectedMessage(message.id);
+                    }}
                     onContextMenu={(e) => {
                       // Poll/location stubs should not be editable/copiable via message menu.
                       if (isRestrictedMessage) return;
@@ -3028,6 +3348,11 @@ export default function ChatView() {
                       openMessageMenu(e, message);
                     }}
                   >
+                    {selectedMessageIds.has(message.id) && (
+                      <div className="absolute -top-2 -left-2 z-30 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs">
+                        ✓
+                      </div>
+                    )}
                     <div
                       className={`flex gap-2 ${isOutgoing ? 'justify-end' : 'justify-start items-end'} ${
                         showAvatar ? 'mt-4' : ''
@@ -3070,17 +3395,33 @@ export default function ChatView() {
                               ? 'bg-chat-outgoing rounded-br-md'
                               : 'bg-chat-incoming rounded-bl-md'
                           } ${
-                            pinnedMessage?.messageId === message.id ? 'ring-2 ring-primary/60' : ''
+                            pinnedMessage?.messageId === message.id || highlightMessageId === message.id
+                              ? 'ring-2 ring-primary/60'
+                              : ''
                           } ${discussionLinked ? 'ring-2 ring-[#FF2B5E]/60' : ''}
                           }`}
                         >
                           {message.replyTo && (
-                            <div
-                              className={`border-l-2 pl-2 mb-2 ${
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const replyId = message.replyTo?.id;
+                                if (!replyId) return;
+                                const el = document.getElementById(`message-${replyId}`);
+                                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                setHighlightMessageId(replyId);
+                                window.setTimeout(() => setHighlightMessageId(null), 1400);
+                              }}
+                              className={`border-l-2 pl-2 mb-2 text-left ${
                                 isOutgoing ? 'border-white/25' : 'border-text-secondary/30'
                               } ${
-                                isOutgoing ? 'bg-white/10 rounded-r-md py-1.5 pr-2' : 'bg-background-dark/35 rounded-r-md py-1.5 pr-2'
+                                isOutgoing
+                                  ? 'bg-white/10 rounded-r-md py-1.5 pr-2'
+                                  : 'bg-background-dark/35 rounded-r-md py-1.5 pr-2'
                               }`}
+                              style={{ cursor: 'pointer' }}
                             >
                               <p
                                 className={`text-xs ${isOutgoing ? 'text-white/90' : 'text-primary/90'}`}
@@ -3092,23 +3433,76 @@ export default function ChatView() {
                                 className={`text-sm truncate ${isOutgoing ? 'text-white' : 'text-text-primary'}`}
                                 style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
                               >
-                                {message.replyTo.content}
+                                {(() => {
+                                  const rt = message.replyTo;
+                                  if (!rt) return '';
+                                  if (rt.isDeleted) return t('chat.message.deleted');
+                                  if (rt.content?.trim()) return rt.content.trim();
+                                  const poll = parsePollStub(rt.content);
+                                  if (poll) return t('chat.snippet.poll');
+                                  const loc = parseLocationStub(rt.content);
+                                  if (loc) return t('chat.snippet.location');
+                                  if (rt.contentType === 'IMAGE' && rt.mediaUrl) return t('chat.snippet.drawing');
+                                  if (rt.contentType === 'VIDEO' && rt.mediaUrl) return t('chat.search.filter.video');
+                                  if (rt.contentType === 'AUDIO' || rt.contentType === 'VOICE') return t('chat.snippet.audio');
+                                  if (rt.contentType === 'FILE' && rt.mediaUrl) return t('chat.snippet.file');
+                                  return t('chat.snippet.message');
+                                })()}
                               </p>
-                            </div>
+                            </button>
                           )}
 
                           {message.isDeleted ? (
-                            <p className="text-text-secondary italic text-sm">This message was deleted</p>
+                            <p className="text-text-secondary italic text-sm">{t('chat.message.deleted')}</p>
                           ) : (
                             <>
                               {message.mediaUrl && (
                                 <div className="mb-2">
                                   {message.contentType === 'IMAGE' ? (
-                                    <img
-                                      src={mediaUrl(message.mediaUrl)}
-                                      alt=""
-                                      className="rounded-lg max-w-full max-h-64 object-contain"
-                                    />
+                                    <div className="relative inline-block max-w-full">
+                                      <img
+                                        src={mediaUrl(message.mediaUrl)}
+                                        alt=""
+                                        className="rounded-lg max-w-full max-h-64 object-contain block"
+                                      />
+                                      {(activeAnimsByMessageId[message.id]?.length ?? 0) > 0 && (
+                                        <div className="draw-anim-layer">
+                                          {activeAnimsByMessageId[message.id].map((a) => {
+                                            const r = animRand(a.seed);
+                                            const amp = a.intensity === 'high' ? 16 : a.intensity === 'low' ? 6 : 10;
+                                            const dx = () => `${Math.round((r() * 2 - 1) * amp)}px`;
+                                            const dy = () => `${Math.round((r() * 2 - 1) * amp)}px`;
+                                            const style: React.CSSProperties = {
+                                              // drift points
+                                              ['--dx1' as any]: dx(),
+                                              ['--dy1' as any]: dy(),
+                                              ['--dx2' as any]: dx(),
+                                              ['--dy2' as any]: dy(),
+                                              ['--dx3' as any]: dx(),
+                                              ['--dy3' as any]: dy(),
+                                              ['--dx4' as any]: dx(),
+                                              ['--dy4' as any]: dy(),
+                                              ['--rollFrom' as any]: `${Math.round((r() * 2 - 1) * (amp + 6))}px`,
+                                              ['--rollTo' as any]: `${Math.round((r() * 2 - 1) * (amp + 6))}px`,
+                                              opacity: a.preset === 'glow' ? 0.8 : 0.55,
+                                            };
+                                            const cls =
+                                              a.preset === 'glow'
+                                                ? 'draw-anim-glow'
+                                                : a.preset === 'bounce'
+                                                  ? 'draw-anim-bounce'
+                                                  : 'draw-anim-roll';
+                                            return (
+                                              <div
+                                                key={a.instanceId}
+                                                className={cls}
+                                                style={style}
+                                              />
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
                                   ) : message.contentType === 'VIDEO' ? (
                                     <video
                                       src={mediaUrl(message.mediaUrl)}
@@ -3125,7 +3519,7 @@ export default function ChatView() {
                                     <div className="flex items-center gap-2 p-2 bg-background-dark/50 rounded-lg">
                                       <File className="w-5 h-5 text-text-secondary shrink-0" />
                                       <span className="text-sm text-text-primary truncate">
-                                        {message.content || 'File'}
+                                        {message.content || t('chat.snippet.file')}
                                       </span>
                                     </div>
                                   )}
@@ -3231,7 +3625,7 @@ export default function ChatView() {
                               type="button"
                               onClick={() => setReplyingTo(message)}
                               className="p-1.5 hover:bg-background-light rounded-full transition-colors shrink-0"
-                              aria-label="Ответить"
+                              aria-label={t('chat.menu.reply')}
                             >
                               <Reply className="w-4 h-4 text-text-secondary" />
                             </button>
@@ -3240,7 +3634,7 @@ export default function ChatView() {
                                 type="button"
                                 onClick={() => handleEditMessage(message)}
                                 className="p-1.5 hover:bg-background-light rounded-full transition-colors shrink-0"
-                                aria-label="Редактировать"
+                                aria-label={t('chat.menu.edit')}
                               >
                                 <Edit className="w-4 h-4 text-text-secondary" />
                               </button>
@@ -3249,7 +3643,7 @@ export default function ChatView() {
                               type="button"
                               onClick={(e) => openMessageMenu(e, message)}
                               className="p-1.5 hover:bg-background-light rounded-full transition-colors shrink-0"
-                              aria-label="Действия с сообщением"
+                              aria-label={t('chat.menu.actions')}
                             >
                               <MoreVertical className="w-4 h-4 text-text-secondary" />
                             </button>
@@ -3280,7 +3674,19 @@ export default function ChatView() {
                                   className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
                                 >
                                   <Reply className="w-4 h-4" />
-                                  Ответить
+                                  {t('chat.menu.reply')}
+                                </button>
+                              )}
+                              {!message.isDeleted && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    toggleSelectedMessage(message.id);
+                                    setShowMessageMenu(null);
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
+                                >
+                                  {selectedMessageIds.has(message.id) ? t('chat.menu.deselect') : t('chat.menu.select')}
                                 </button>
                               )}
                               <div className="my-1 border-t border-background-medium/80" />
@@ -3291,7 +3697,7 @@ export default function ChatView() {
                                   className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
                                 >
                                   <Bookmark className="w-4 h-4" />
-                                  В избранное
+                                  {t('chat.menu.saved')}
                                 </button>
                               )}
                               {!message.isDeleted &&
@@ -3317,6 +3723,36 @@ export default function ChatView() {
                                   {pinnedMessage?.messageId === message.id ? t('message.unpin') : t('message.pin')}
                                 </button>
                               )}
+                              {!message.isDeleted && message.contentType === 'IMAGE' && message.mediaUrl && (
+                                <>
+                                  <div className="my-1 border-t border-background-medium/80" />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      // Start a random preset; multiple clicks => parallel instances.
+                                      const presets: AnimPreset[] = ['glow', 'bounce', 'roll'];
+                                      const preset = presets[Math.floor(Math.random() * presets.length)]!;
+                                      startSyncedAnimation(message.id, preset);
+                                      setShowMessageMenu(null);
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
+                                  >
+                                    <Sparkles className="w-4 h-4" />
+                                    {t('chat.menu.animate')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      stopSyncedAnimations(message.id);
+                                      setShowMessageMenu(null);
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-sm text-text-secondary hover:bg-background-medium flex items-center gap-2 transition-colors"
+                                  >
+                                    <X className="w-4 h-4" />
+                                    {t('chat.menu.animateStop')}
+                                  </button>
+                                </>
+                              )}
                               {!message.isDeleted && message.content && !parsePollStub(message.content) && !parseLocationStub(message.content) && (
                                 <button
                                   type="button"
@@ -3324,7 +3760,7 @@ export default function ChatView() {
                                   className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
                                 >
                                   <Copy className="w-4 h-4" />
-                                  Копировать текст
+                                  {t('chat.menu.copyText')}
                                 </button>
                               )}
                               {isOutgoing && (
@@ -3336,7 +3772,7 @@ export default function ChatView() {
                                     className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background-medium flex items-center gap-2 transition-colors"
                                   >
                                     <Edit className="w-4 h-4" />
-                                    Edit
+                                    {t('chat.menu.edit')}
                                   </button>
                                   <button
                                     type="button"
@@ -3344,7 +3780,7 @@ export default function ChatView() {
                                     className="w-full px-3 py-2 text-left text-sm text-status-danger hover:bg-background-medium flex items-center gap-2 transition-colors"
                                   >
                                     <Trash2 className="w-4 h-4" />
-                                    Delete
+                                    {t('chat.menu.delete')}
                                   </button>
                                 </>
                               )}
@@ -3362,8 +3798,8 @@ export default function ChatView() {
                                         )
                                       }
                                       className="w-10 h-10 rounded-full bg-background-light hover:bg-background-medium flex items-center justify-center transition-colors"
-                                      aria-label="Реакция"
-                                      title="Реакция"
+                                      aria-label={t('chat.menu.reaction')}
+                                      title={t('chat.menu.reaction')}
                                     >
                                       <Smile className="w-5 h-5 text-text-secondary" />
                                     </button>
@@ -3403,7 +3839,7 @@ export default function ChatView() {
               <span className="w-2 h-2 bg-text-secondary rounded-full typing-dot" />
               <span className="w-2 h-2 bg-text-secondary rounded-full typing-dot" />
             </div>
-            <span>печатает…</span>
+            <span>{t('chat.typing')}</span>
           </div>
         )}
 
@@ -3414,7 +3850,7 @@ export default function ChatView() {
         <div className="px-4 py-2 bg-background-medium border-t border-background-light flex items-center gap-3 shrink-0">
           <div className="flex-1 min-w-0">
             <p className="text-xs text-text-primary">
-              Replying to {replyingTo.sender.displayName}
+                {t('chat.message.replyingTo').replace('{name}', replyingTo.sender.displayName)}
             </p>
             <p className="text-sm text-text-primary truncate">{replyingTo.content}</p>
           </div>
@@ -3431,7 +3867,7 @@ export default function ChatView() {
       {editingMessage && (
         <div className="px-4 py-2 bg-background-medium border-t border-background-light flex items-center gap-3 shrink-0">
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-primary">Editing message</p>
+            <p className="text-xs text-primary">{t('chat.message.editingMessage')}</p>
             <p className="text-sm text-text-primary truncate">{editingMessage.content}</p>
           </div>
           <button
@@ -3452,10 +3888,10 @@ export default function ChatView() {
           <div
             className="absolute bottom-full left-0 right-0 mb-2 max-h-52 overflow-y-auto rounded-xl border border-background-light bg-background-medium shadow-2xl py-1"
             role="listbox"
-            aria-label="Упоминания"
+            aria-label={t('chat.mentions')}
           >
             {mentionFiltered.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-text-secondary">Нет совпадений</p>
+              <p className="px-3 py-2 text-sm text-text-secondary">{t('chat.noMatches')}</p>
             ) : (
               mentionFiltered.map((u, i) => (
                 <button
@@ -3523,7 +3959,7 @@ export default function ChatView() {
                     type="button"
                     className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-background-dark/80 text-text-primary opacity-90 hover:opacity-100"
                     onClick={() => removePendingAttachment(p.id)}
-                    aria-label="Remove attachment"
+                    aria-label={t('chat.composer.removeAttachmentAria')}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -3542,8 +3978,8 @@ export default function ChatView() {
                 setShowAttachMenu((v) => !v);
               }}
               className="p-2 hover:bg-background-light rounded-full transition-colors disabled:opacity-50"
-              aria-label="Вложения"
-              title="Вложения"
+              aria-label={t('composer.attachments')}
+              title={t('composer.attachments')}
             >
               <Paperclip className="w-5 h-5 text-text-secondary" />
             </button>
@@ -3664,7 +4100,7 @@ export default function ChatView() {
                 }
               }}
               onBlur={handleTypingStop}
-              placeholder="Сообщение"
+              placeholder={t('chat.composer.placeholder')}
               rows={1}
               className="w-full px-4 py-2.5 bg-background-light rounded-lg border border-transparent focus:border-primary text-text-primary placeholder-text-secondary resize-none max-h-[7.5rem] transition-colors leading-6"
               style={{
@@ -3689,7 +4125,7 @@ export default function ChatView() {
                 setShowEmojiPicker((v) => !v);
               }}
               className="p-2 hover:bg-background-light rounded-full transition-colors"
-              aria-label="Эмодзи"
+              aria-label={t('chat.emoji')}
               aria-expanded={showEmojiPicker}
             >
               <Smile className="w-5 h-5 text-text-secondary" />
@@ -3713,17 +4149,17 @@ export default function ChatView() {
             }`}
             title={
               messageInput.trim() || editingMessage || pendingAttachments.length > 0
-                ? 'Send'
+                ? t('chat.composer.send')
                 : isRecording
-                  ? 'Stop and send'
-                  : 'Record voice'
+                  ? t('chat.composer.stopAndSend')
+                  : t('chat.composer.recordVoice')
             }
             aria-label={
               messageInput.trim() || editingMessage || pendingAttachments.length > 0
-                ? 'Send message'
+                ? t('chat.composer.sendMessageAria')
                 : isRecording
-                  ? 'Stop recording'
-                  : 'Record voice message'
+                  ? t('chat.composer.stopRecordingAria')
+                  : t('chat.composer.recordVoiceMessageAria')
             }
           >
             {messageInput.trim() || editingMessage || pendingAttachments.length > 0 ? (
@@ -3747,20 +4183,20 @@ export default function ChatView() {
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-background-light">
               <h2 id="chat-theme-title" className="font-semibold text-text-primary">
-                Choose theme
+                {t('chat.theme.choose')}
               </h2>
               <button
                 type="button"
                 onClick={() => setShowThemeModal(false)}
                 className="p-2 rounded-full hover:bg-background-light text-text-secondary"
-                aria-label="Close"
+                aria-label={t('common.close')}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[50vh] overflow-y-auto">
               {(Object.keys(CHAT_THEME_PRESETS) as ChatThemeId[]).map((id) => {
-                const t = CHAT_THEME_PRESETS[id];
+                const theme = CHAT_THEME_PRESETS[id];
                 const selected = chatThemeId === id;
                 return (
                   <button
@@ -3769,17 +4205,17 @@ export default function ChatView() {
                     onClick={() => {
                       setChatTheme(chatId, id);
                       setShowThemeModal(false);
-                      setToast('Theme applied');
+                      setToast(t('chat.toast.themeApplied'));
                     }}
                     className={`rounded-xl border-2 p-3 text-left transition-colors ${
                       selected ? 'border-tg-link ring-2 ring-tg-link/40' : 'border-background-light hover:bg-background-light'
                     }`}
                   >
                     <div className="flex gap-1 mb-2 h-8 rounded overflow-hidden">
-                      <div className="flex-1" style={{ background: t.outgoing }} />
-                      <div className="flex-1" style={{ background: t.incoming }} />
+                      <div className="flex-1" style={{ background: theme.outgoing }} />
+                      <div className="flex-1" style={{ background: theme.incoming }} />
                     </div>
-                    <p className="text-sm text-text-primary font-medium">{t.name}</p>
+                    <p className="text-sm text-text-primary font-medium">{theme.name}</p>
                   </button>
                 );
               })}
@@ -3790,11 +4226,11 @@ export default function ChatView() {
                 onClick={() => {
                   setChatTheme(chatId, 'default');
                   setShowThemeModal(false);
-                  setToast('Default theme');
+                  setToast(t('chat.toast.defaultTheme'));
                 }}
                 className="w-full py-2.5 text-tg-link text-sm font-medium hover:underline"
               >
-                Reset to default
+                {t('chat.theme.resetDefault')}
               </button>
             </div>
           </div>

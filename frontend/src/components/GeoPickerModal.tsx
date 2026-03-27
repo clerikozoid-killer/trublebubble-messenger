@@ -9,6 +9,14 @@ export type GeoChoice = {
   placeType: string;
 };
 
+type GeoPlaceDemo = {
+  labelKey: string;
+  searchText: string;
+  placeType: GeoChoice['placeType'];
+  lat: number;
+  lng: number;
+};
+
 export default function GeoPickerModal({
   open,
   onClose,
@@ -28,22 +36,59 @@ export default function GeoPickerModal({
     yPct: number;
   }>(null);
 
-  const places = useMemo<GeoChoice[]>(
+  const places = useMemo<GeoPlaceDemo[]>(
     () => [
-      { label: 'Coffee Shop', lat: 56.85, lng: 36.85, placeType: 'shop' },
-      { label: 'Центральная площадь', lat: 56.86, lng: 36.86, placeType: 'square' },
-      { label: 'Кафе Молка', lat: 56.84, lng: 36.88, placeType: 'cafe' },
-      { label: 'Набережная Волги', lat: 56.83, lng: 36.87, placeType: 'river' },
-      { label: 'Греночка', lat: 56.82, lng: 36.86, placeType: 'food' },
-      { label: 'Конаковский бор', lat: 56.87, lng: 36.89, placeType: 'nature' },
+      {
+        labelKey: 'geo.place.coffeeShop',
+        placeType: 'shop',
+        lat: 56.85,
+        lng: 36.85,
+        // Helps filtering match both place name and place category.
+        searchText: `${t('geo.place.coffeeShop')} ${t('geo.placeType.shop')}`,
+      },
+      {
+        labelKey: 'geo.place.centralSquare',
+        placeType: 'square',
+        lat: 56.86,
+        lng: 36.86,
+        searchText: `${t('geo.place.centralSquare')} ${t('geo.placeType.square')}`,
+      },
+      {
+        labelKey: 'geo.place.molkaCafe',
+        placeType: 'cafe',
+        lat: 56.84,
+        lng: 36.88,
+        searchText: `${t('geo.place.molkaCafe')} ${t('geo.placeType.cafe')}`,
+      },
+      {
+        labelKey: 'geo.place.volgaEmbankment',
+        placeType: 'river',
+        lat: 56.83,
+        lng: 36.87,
+        searchText: `${t('geo.place.volgaEmbankment')} ${t('geo.placeType.river')}`,
+      },
+      {
+        labelKey: 'geo.place.grenochka',
+        placeType: 'food',
+        lat: 56.82,
+        lng: 36.86,
+        searchText: `${t('geo.place.grenochka')} ${t('geo.placeType.food')}`,
+      },
+      {
+        labelKey: 'geo.place.konakovskyForest',
+        placeType: 'nature',
+        lat: 56.87,
+        lng: 36.89,
+        searchText: `${t('geo.place.konakovskyForest')} ${t('geo.placeType.nature')}`,
+      },
     ],
-    []
+    [t]
   );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return places;
-    return places.filter((p) => p.label.toLowerCase().includes(q));
+    return places.filter((p) => p.searchText.toLowerCase().includes(q));
   }, [places, query]);
 
   if (!open) return null;
@@ -116,7 +161,7 @@ export default function GeoPickerModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[180] bg-black/60 flex items-end sm:items-center justify-center p-4">
+    <div className="fixed inset-0 z-[300] bg-black/60 flex items-end sm:items-center justify-center p-4">
       <div className="w-full max-w-md rounded-2xl bg-background-medium border border-background-light shadow-2xl overflow-hidden animate-scale-in">
         <div className="px-4 py-3 border-b border-background-light/70 flex items-center justify-between gap-3">
           <div className="text-sm font-semibold text-text-primary flex items-center gap-2">
@@ -127,7 +172,7 @@ export default function GeoPickerModal({
             type="button"
             className="p-1.5 hover:bg-background-light rounded-full transition-colors"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             <X className="w-4 h-4 text-text-secondary" />
           </button>
@@ -144,7 +189,7 @@ export default function GeoPickerModal({
                 onClick={onMapClick}
                 role="button"
                 tabIndex={0}
-                aria-label="Map"
+                aria-label={t('geo.mapAria')}
               >
                 {/* Map placeholder */}
                 <svg width="220" height="160" viewBox="0 0 220 160" fill="none" aria-hidden="true">
@@ -199,17 +244,26 @@ export default function GeoPickerModal({
           <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
             {filtered.map((p) => (
               <button
-                key={`${p.placeType}-${p.label}`}
+                key={`${p.placeType}-${p.labelKey}`}
                 type="button"
-                onClick={() => handlePick(p)}
+                onClick={() =>
+                  handlePick({
+                    label: t(p.labelKey as any),
+                    lat: p.lat,
+                    lng: p.lng,
+                    placeType: p.placeType,
+                  })
+                }
                 className="w-full text-left rounded-xl px-3 py-2 hover:bg-background-light/60 transition-colors flex items-center gap-3"
               >
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${circleStyle(p.placeType)}`}>
                   <span className="text-white text-lg">{circleEmoji(p.placeType)}</span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-text-primary truncate">{p.label}</div>
-                  <div className="text-xs text-text-secondary truncate">{p.placeType}</div>
+                  <div className="font-semibold text-text-primary truncate">{t(p.labelKey as any)}</div>
+                  <div className="text-xs text-text-secondary truncate">
+                    {t(`geo.placeType.${p.placeType}` as any)}
+                  </div>
                 </div>
               </button>
             ))}

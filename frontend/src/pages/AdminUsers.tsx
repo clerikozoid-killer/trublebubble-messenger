@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { api } from '../services/api';
 import { BubbleLogo } from '../components/BubbleLogo';
+import { useI18n } from '../i18n/useI18n';
 
 export default function AdminUsers() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [users, setUsers] = useState<
     Array<{
@@ -32,7 +34,7 @@ export default function AdminUsers() {
       const data = await api.adminListUsers();
       setUsers(data);
     } catch {
-      setError('Failed to load users or access denied.');
+      setError(t('adminUsers.errorLoadUsersOrAccessDenied'));
     } finally {
       setLoading(false);
     }
@@ -61,7 +63,8 @@ export default function AdminUsers() {
       setGrantAdmin(false);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Create failed');
+      // Keep error UI language consistent.
+      setError(t('adminUsers.errorCreateFailed'));
     } finally {
       setSaving(false);
     }
@@ -78,7 +81,7 @@ export default function AdminUsers() {
           <ArrowLeft className="w-5 h-5 text-text-secondary" />
         </button>
         <BubbleLogo variant="icon" size="sm" />
-        <h1 className="font-semibold text-text-primary">Admin — users</h1>
+        <h1 className="font-semibold text-text-primary">{t('adminUsers.title')}</h1>
       </div>
 
       <div className="flex-1 p-4 max-w-2xl mx-auto w-full space-y-8">
@@ -86,9 +89,9 @@ export default function AdminUsers() {
           onSubmit={handleCreate}
           className="bg-background-medium rounded-2xl p-6 space-y-4 border border-background-light"
         >
-          <h2 className="text-lg font-medium text-text-primary">Create account</h2>
+          <h2 className="text-lg font-medium text-text-primary">{t('adminUsers.createAccountTitle')}</h2>
           <div>
-            <label className="block text-sm text-text-secondary mb-1">Email</label>
+            <label className="block text-sm text-text-secondary mb-1">{t('adminUsers.emailLabel')}</label>
             <input
               type="email"
               value={email}
@@ -98,7 +101,7 @@ export default function AdminUsers() {
             />
           </div>
           <div>
-            <label className="block text-sm text-text-secondary mb-1">Password</label>
+            <label className="block text-sm text-text-secondary mb-1">{t('adminUsers.passwordLabel')}</label>
             <input
               type="password"
               value={password}
@@ -109,7 +112,7 @@ export default function AdminUsers() {
             />
           </div>
           <div>
-            <label className="block text-sm text-text-secondary mb-1">Display name</label>
+            <label className="block text-sm text-text-secondary mb-1">{t('adminUsers.displayNameLabel')}</label>
             <input
               type="text"
               value={displayName}
@@ -120,7 +123,7 @@ export default function AdminUsers() {
           </div>
           <div>
             <label className="block text-sm text-text-secondary mb-1">
-              Username (optional)
+              {t('adminUsers.usernameOptionalLabel')}
             </label>
             <input
               type="text"
@@ -138,22 +141,22 @@ export default function AdminUsers() {
               onChange={(e) => setGrantAdmin(e.target.checked)}
               className="rounded"
             />
-            Grant admin
+            {t('adminUsers.grantAdminLabel')}
           </label>
           <button
             type="submit"
             disabled={saving}
             className="w-full py-3 bg-primary hover:bg-primary-dark text-white font-medium rounded-lg disabled:opacity-50"
           >
-            {saving ? 'Creating…' : 'Create user'}
+            {saving ? t('adminUsers.creating') : t('adminUsers.createUserButton')}
           </button>
           {error && <p className="text-status-danger text-sm">{error}</p>}
         </form>
 
         <div>
-          <h2 className="text-lg font-medium text-text-primary mb-3">Accounts</h2>
+          <h2 className="text-lg font-medium text-text-primary mb-3">{t('adminUsers.accountsTitle')}</h2>
           {loading ? (
-            <p className="text-text-secondary">Loading…</p>
+            <p className="text-text-secondary">{t('common.loading')}</p>
           ) : (
             <ul className="space-y-2">
               {users.map((u) => (
@@ -170,7 +173,7 @@ export default function AdminUsers() {
                   </div>
                   {u.isAdmin && (
                     <span className="text-xs bg-primary/20 text-primary px-2 py-1 rounded">
-                      admin
+                      {t('adminUsers.adminBadge')}
                     </span>
                   )}
                 </li>
